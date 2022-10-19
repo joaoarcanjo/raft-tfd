@@ -45,11 +45,7 @@ public class Replica {
     private static void runReplica() throws IOException {
         System.out.println(replicasAddresses);
 
-        /*while (true) {
-            System.out.println("Do something forever :(");
-        }*/
-
-        new Thread(() -> {
+        Thread listener = new Thread(() -> {
             Server svc = ServerBuilder
                     .forPort(8000)
                     .addService(new GRPCServer())
@@ -61,7 +57,9 @@ public class Replica {
             } catch (InterruptedException | IOException e) {
                 throw new RuntimeException(e);
             }
-        }).start();
+        });
+        listener.start();
+        //listener.join();
 
         // Iniciar os canais de comunicação e guardá-los num array
 

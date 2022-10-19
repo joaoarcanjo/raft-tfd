@@ -12,8 +12,9 @@ service Server {
 }
 
 message Request {
-  string label = 1;
-  string data = 2;
+  string id = 1;
+  string label = 2;
+  string data = 3;
 }
 
 message Result {
