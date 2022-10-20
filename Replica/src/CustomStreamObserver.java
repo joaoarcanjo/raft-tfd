@@ -15,12 +15,10 @@ public class CustomStreamObserver implements StreamObserver<Request> {
     @Override
     public void onNext(Request request) {
         try {
-            Result result = logicHandler.processRequest(request.getId(), request.getLabel(), request.getData());
-            resultStream.onNext(result);
+            resultStream.onNext(logicHandler.processRequest(request.getId(), request.getLabel(), request.getData()));
         } catch (Exception e) {
             resultStream.onError(e);
         }
-        //resultStream.onNext(); Send response
     }
 
     @Override

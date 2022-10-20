@@ -14,6 +14,4 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
         // E enviar a resposta
         return new CustomStreamObserver(responseObserver, logicHandler);
     }
-
-
 }
