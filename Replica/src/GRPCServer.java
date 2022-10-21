@@ -10,6 +10,9 @@ import streamobservers.ServerStreamObserver;
 import java.io.IOException;
 
 public class GRPCServer extends ServerGrpc.ServerImplBase {
+
+    private static Server svc;
+    private static Thread serverThread;
     private final EventLogic eventLogic;
 
     public GRPCServer(EventLogic eventLogic) {
@@ -27,8 +30,8 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
      * @return the server thread instance
      */
     public static Thread initServerThread(int port, EventLogic eventLogic) {
-        Thread serverThread = new Thread(() -> {
-            Server svc = ServerBuilder
+        serverThread = new Thread(() -> {
+            svc = ServerBuilder
                     .forPort(port)
                     .addService(new GRPCServer(eventLogic))
                     .build();
@@ -43,5 +46,15 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
         });
         serverThread.start();
         return serverThread;
+    }
+
+    public static boolean terminateServerThread() {
+        svc.shutdown();
+        try {
+            serverThread.join();
+            return true;
+        } catch (InterruptedException e) {
+            return false;
+        }
     }
 }

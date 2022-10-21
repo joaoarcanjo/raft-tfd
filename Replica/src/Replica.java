@@ -140,7 +140,7 @@ public class Replica {
             String options = "Choose an operation: \n" +
                     " [0] ADD string to all replicas\n" +
                     " [1] GET set of strings from a replica\n" +
-                    " [2] Go back";
+                    " [2] Exit";
             System.out.println(options);
             System.out.print("-> ");
 
@@ -148,14 +148,23 @@ public class Replica {
                 case "0": {
                     if (!waitingResults.compareAndSet(0, Math.round(replicas.size() / 2f) - 1)) // TODO: MAL
                         throw new IllegalStateException();
-                    quorumInvoke(EventLogic.Events.ADD.name(),  scanner.nextLine(), getInstantTimestamp());
+
+                    quorumInvoke(EventLogic.Events.ADD.name(), scanner.nextLine() , getInstantTimestamp());
 //                    invoke(1, EventLogic.Events.ADD.name(), scanner.nextLine(), getInstantTimestamp());
                     break;
                 }
                 case "1": {
                     if (!waitingResults.compareAndSet(0, 1)) throw new IllegalStateException();
-                    invoke(scanner.nextInt(), EventLogic.Events.GET.name(), "",getInstantTimestamp());
+                    int requestedReplica = scanner.nextInt();
+                    if(requestedReplica == replicaId) {
+                        System.out.println("ResultList: " + eventLogic.receivedData + "\n");
+                        break;
+                    }
+                    invoke(requestedReplica, EventLogic.Events.GET.name(), "",getInstantTimestamp());
                     break;
+                }
+                case "2": {
+                    GRPCServer.terminateServerThread();
                 }
             }
         }
