@@ -80,12 +80,12 @@ public class Replica {
                 try {
                     result = blockingQueue.take();
                     observedValue = waitingResults.get();
-                    if (waitingResults.compareAndSet(observedValue, --observedValue) && observedValue > 0) {
+                    if (observedValue > 0 && waitingResults.compareAndSet(observedValue, --observedValue) && observedValue > 0) {
                         System.out.println("ResultMessage from " + result.getId() + ": " + result.getResultMessage() + "\n");
                         continue;
                     }
                     // If the timestamps are different, then a result from a previous request arrived
-                    if (!lastRequestTimestamp.get().equals(result.getTimestamp())) continue;
+                    if (lastRequestTimestamp.get() == null || !lastRequestTimestamp.get().equals(result.getTimestamp())) continue;
                     lastRequestTimestamp.set(null);
                     if (result.hasResults()) {
                         System.out.println("ResultList: " + result.getResults().getListList() + "\n");
@@ -157,7 +157,6 @@ public class Replica {
                     invoke(scanner.nextInt(), EventLogic.Events.GET.name(), "",getInstantTimestamp());
                     break;
                 }
-                default: return;
             }
         }
     }
