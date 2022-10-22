@@ -29,6 +29,8 @@ public class Replica {
 
     public static final BlockingQueue<Result> blockingQueue = new LinkedBlockingQueue<>();
 
+    private static boolean terminate = false;
+    private static final int DEATH_PILL = -1;
     private static AtomicInteger waitingResults;
     private static AtomicReference<Timestamp> lastRequestTimestamp;
     private static int replicaId;
@@ -76,9 +78,14 @@ public class Replica {
         Thread resultsThread = new Thread(() -> {
             Result result;
             int observedValue;
-            while(true) {
+            while(!terminate) {
                 try {
                     result = blockingQueue.take();
+
+                    if(result.getId() == DEATH_PILL) {
+                        continue;
+                    }
+
                     observedValue = waitingResults.get();
                     if (observedValue > 0 && waitingResults.compareAndSet(observedValue, --observedValue) && observedValue > 0) {
                         System.out.println("ResultMessage from " + result.getId() + ": " + result.getResultMessage() + "\n");
@@ -136,7 +143,8 @@ public class Replica {
      */
     private static void operations() {
         Scanner scanner = new Scanner(System.in);
-        while (true) {
+
+        while (!terminate) {
             String options = "Choose an operation: \n" +
                     " [0] ADD string to all replicas\n" +
                     " [1] GET set of strings from a replica\n" +
@@ -165,8 +173,18 @@ public class Replica {
                 }
                 case "2": {
                     GRPCServer.terminateServerThread();
+                    terminate = true;
+                    break;
                 }
             }
+        }
+
+        try {
+            blockingQueue.add(Result.newBuilder().setId(DEATH_PILL).build());
+            resultsThread.join();
+            System.out.println("Goodbye!");
+        } catch (InterruptedException e) {
+            System.out.println("Couldn't exit Result Thread");
         }
     }
 
