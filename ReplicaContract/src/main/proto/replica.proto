@@ -8,7 +8,7 @@ package replica;
 // The gRPC server service definition.
 service Server {
   // Invoke operation
-  rpc invoke(stream Request) returns (stream Result);
+  rpc invoke(Request) returns (Result);
 }
 
 message Request {

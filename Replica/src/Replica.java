@@ -153,15 +153,14 @@ public class Replica {
             waitingResults.set(0);
             return;
         }
-        var serverStreamObserver = replicas.get(destinyReplicaId).getSecond().invoke(new ClientStreamObserver(blockingQueue));
-        serverStreamObserver.onNext(
-                Request.newBuilder()
-                        .setId(destinyReplicaId)
-                        .setLabel(requestLabel)
-                        .setData(requestData)
-                        .setTimestamp(timestamp)
-                        .build()
-        );
+
+        Request request = Request.newBuilder()
+                .setId(destinyReplicaId)
+                .setLabel(requestLabel)
+                .setData(requestData)
+                .setTimestamp(timestamp)
+                .build();
+        replicas.get(destinyReplicaId).getSecond().invoke(request, new ClientStreamObserver(blockingQueue));
     }
 
     /**

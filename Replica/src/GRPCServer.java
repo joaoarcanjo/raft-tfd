@@ -1,13 +1,16 @@
+import events.EventHandler;
 import events.EventLogic;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
+import io.grpc.Status;
+import io.grpc.StatusException;
 import io.grpc.stub.StreamObserver;
 import replica.Request;
 import replica.Result;
 import replica.ServerGrpc;
-import streamobservers.ServerStreamObserver;
 
 import java.io.IOException;
+import java.util.Optional;
 
 public class GRPCServer extends ServerGrpc.ServerImplBase {
 
@@ -20,8 +23,15 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
     }
 
     @Override
-    public StreamObserver<Request> invoke(StreamObserver<Result> resultStream) {
-        return new ServerStreamObserver(resultStream, eventLogic);
+    public void invoke(Request request, StreamObserver<Result> responseObserver) {
+        Optional<EventHandler> handler = eventLogic.getEventHandler(request.getLabel());
+        if (handler.isEmpty()) {
+            String message = "The requested label '" + request.getLabel() + "' is not valid.";
+            responseObserver.onError(new StatusException(Status.INVALID_ARGUMENT.withDescription(message)));
+            return;
+        }
+        responseObserver.onNext(handler.get().processRequest(request.getId(), request.getLabel(), request.getData(), request.getTimestamp()));
+        responseObserver.onCompleted();
     }
 
     /**
