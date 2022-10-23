@@ -82,23 +82,22 @@ public class Replica {
                 try {
                     result = blockingQueue.take();
 
-                    if(result.getId() == DEATH_PILL) {
-                        continue;
-                    }
-
                     observedValue = waitingResults.get();
-                    if (observedValue > 0 && waitingResults.compareAndSet(observedValue, --observedValue) && observedValue > 0) {
+                    if (observedValue > 0 && !waitingResults.compareAndSet(observedValue, --observedValue)) {
+                        throw new IllegalStateException("Some concurrent problem is happening...");
+                    }
+                    if (observedValue > 0) {
                         System.out.println("ResultMessage from " + result.getId() + ": " + result.getResultMessage() + "\n");
                         continue;
                     }
                     // If the timestamps are different, then a result from a previous request arrived
                     if (lastRequestTimestamp.get() == null || !lastRequestTimestamp.get().equals(result.getTimestamp())) continue;
-                    lastRequestTimestamp.set(null);
+                    resetRequestTimestamp();
                     if (result.hasResults()) {
                         System.out.println("ResultList: " + result.getResults().getListList() + "\n");
                         continue;
                     }
-                    System.out.println("ResultMessage: " + result.getResultMessage() + "\n");
+                    System.out.println("ResultMessage from " + result.getId() + ": " + result.getResultMessage() + "\n");
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -124,13 +123,53 @@ public class Replica {
         resultsThread = initResultsThread();
     }
 
+    /**
+     * Obtains the current timestamp from the instant of the system clock and builds the proto Timestamp type
+     * @return the proto Timestamp type
+     */
     private static Timestamp getInstantTimestamp() {
         var timestamp = java.sql.Timestamp.from(Instant.now());
-        var rpcTimestamp = Timestamp.newBuilder().setSeconds(timestamp.getTime()).setNanos(timestamp.getNanos()).build();
-        lastRequestTimestamp.set(rpcTimestamp);
-        return rpcTimestamp;
+        return Timestamp.newBuilder().setSeconds(timestamp.getTime()).setNanos(timestamp.getNanos()).build();
     }
 
+    /**
+     * Resets the last requested timestamp, changing its value to null
+     */
+    private static void resetRequestTimestamp() {
+        lastRequestTimestamp.set(null);
+    }
+
+    /**
+     * Invokes a specific operation in another replica
+     * @param destinyReplicaId replica to perform the operation
+     * @param requestLabel label associated to the operation to perform
+     * @param requestData data to be sent in the operation
+     * @param timestamp timestamp of the request invocation
+     */
+    private static void invoke(int destinyReplicaId, String requestLabel, String requestData, Timestamp timestamp) {
+        if(destinyReplicaId == replicaId) {
+            System.out.println("ResultList: " + eventLogic.getReceivedData() + "\n");
+            resetRequestTimestamp();
+            waitingResults.set(0);
+            return;
+        }
+        var serverStreamObserver = replicas.get(destinyReplicaId).getSecond().invoke(new ClientStreamObserver(blockingQueue));
+        serverStreamObserver.onNext(
+                Request.newBuilder()
+                        .setId(destinyReplicaId)
+                        .setLabel(requestLabel)
+                        .setData(requestData)
+                        .setTimestamp(timestamp)
+                        .build()
+        );
+    }
+
+    /**
+     * Invokes an operation in all replicas but the sender
+     * @param requestLabel label associated to the operation to perform
+     * @param requestData data to send in the operation
+     * @param timestamp timestamp of the request invocation
+     */
     private static void quorumInvoke(String requestLabel, String requestData, Timestamp timestamp) {
         for (int id = 0; id < replicas.size(); id++) {
             if (replicaId == id) continue;
@@ -139,65 +178,68 @@ public class Replica {
     }
 
     /**
+     * Cancels the wait for results from a previous operation request
+     * @param scanner scanner to read from the standard input
+     */
+    private static void cancelOperation(Scanner scanner) {
+        System.out.println("Do you want to cancel the previous operation? [y/n]");
+        System.out.print("-> ");
+        String response = scanner.nextLine();
+        if (response.length() > 0 && response.compareTo("y") != 0) return;
+        resetRequestTimestamp();
+        waitingResults.set(0);
+    }
+
+    /**
      * Menu with all the possible operations to test the system
      */
     private static void operations() {
         Scanner scanner = new Scanner(System.in);
-
+        String options = "Choose an operation: \n" +
+                " [0] ADD string to all replicas\n" +
+                " [1] GET set of strings from a replica\n" +
+                " [2] Exit";
         while (!terminate) {
-            String options = "Choose an operation: \n" +
-                    " [0] ADD string to all replicas\n" +
-                    " [1] GET set of strings from a replica\n" +
-                    " [2] Exit";
             System.out.println(options);
             System.out.print("-> ");
 
             switch (scanner.nextLine()) {
                 case "0": {
-                    if (!waitingResults.compareAndSet(0, Math.round(replicas.size() / 2f) - 1)) // TODO: MAL
-                        throw new IllegalStateException();
+                    if (!waitingResults.compareAndSet(0, Math.round(replicas.size() / 2f))) { // k > n/2 - 1
+                        System.out.println(" * Still waiting for the majority of results...");
+                        cancelOperation(scanner);
+                        break;
+                    }
+                    System.out.print("Insert the data: \n-> ");
+                    String data = scanner.nextLine();
 
-                    quorumInvoke(EventLogic.Events.ADD.name(), scanner.nextLine() , getInstantTimestamp());
-//                    invoke(1, EventLogic.Events.ADD.name(), scanner.nextLine(), getInstantTimestamp());
+                    Timestamp rpcTimestamp = getInstantTimestamp();
+                    lastRequestTimestamp.set(rpcTimestamp);
+                    quorumInvoke(EventLogic.Events.ADD.name(), data, rpcTimestamp);
                     break;
                 }
                 case "1": {
-                    if (!waitingResults.compareAndSet(0, 1)) throw new IllegalStateException();
-                    int requestedReplica = scanner.nextInt();
-                    if(requestedReplica == replicaId) {
-                        System.out.println("ResultList: " + eventLogic.receivedData + "\n");
+                    if (!waitingResults.compareAndSet(0, 1)) {
+                        System.out.println(" * Still waiting for the result...");
+                        cancelOperation(scanner);
                         break;
                     }
-                    invoke(requestedReplica, EventLogic.Events.GET.name(), "",getInstantTimestamp());
+                    System.out.print("Replica id: \n-> ");
+                    int id = Integer.parseInt(scanner.nextLine());
+
+                    Timestamp rpcTimestamp = getInstantTimestamp();
+                    lastRequestTimestamp.set(rpcTimestamp);
+                    invoke(id, EventLogic.Events.GET.name(), "", rpcTimestamp);
                     break;
                 }
                 case "2": {
-                    GRPCServer.terminateServerThread();
                     terminate = true;
                     break;
                 }
             }
         }
-
-        try {
-            blockingQueue.add(Result.newBuilder().setId(DEATH_PILL).build());
-            resultsThread.join();
-            System.out.println("Goodbye!");
-        } catch (InterruptedException e) {
-            System.out.println("Couldn't exit Result Thread");
-        }
-    }
-
-    private static void invoke(int replicaId, String requestLabel, String requestData, Timestamp timestamp) {
-        var serverStreamObserver = replicas.get(replicaId).getSecond().invoke(new ClientStreamObserver(blockingQueue));
-        serverStreamObserver.onNext(
-                Request.newBuilder()
-                        .setId(replicaId)
-                        .setLabel(requestLabel)
-                        .setData(requestData)
-                        .setTimestamp(timestamp)
-                        .build()
-        );
+        System.out.println(" * Replica " + replicaId + " is shutting down...");
+        System.exit(1);
     }
 
     public static void main(String[] args) {
@@ -206,18 +248,11 @@ public class Replica {
                 System.out.println("Usage: java -jar Replica.jar <id(>= 0)> <configFile(absolute path)>");
                 System.exit(-1);
             }
-//            args[0] = auxToDelete();
             initReplica(Integer.parseInt(args[0]), args[1]);
-            System.out.println(Arrays.toString(replicas.toArray()));
+            System.out.println(" * REPLICA ID: " + replicaId + " *");
             operations();
         } catch (IOException e) {
             System.out.println("* ERROR * " + e);
         }
-    }
-
-    //apenas para poder criar varias instancias sem ter que estar a alterar o argument 0.
-    public static String auxToDelete() {
-        Scanner scanner = new Scanner(System.in);
-        return scanner.nextLine();
     }
 }

@@ -9,7 +9,7 @@ import java.util.*;
 public class EventLogic {
     public enum Events { ADD, GET }
 
-    public final Set<String> receivedData;
+    private final Set<String> receivedData;
     private final Map<String, EventHandler> eventHandlers;
 
     public EventLogic() {
@@ -26,6 +26,10 @@ public class EventLogic {
     public Optional<EventHandler> getEventHandler(String requestLabel) {
         EventHandler handler = eventHandlers.get(requestLabel);
         return handler == null ? Optional.empty() : Optional.of(handler);
+    }
+
+    public Set<String> getReceivedData() {
+        return receivedData;
     }
 
     private static void verifyLabel(String requestLabel, String handlerLabel) {
