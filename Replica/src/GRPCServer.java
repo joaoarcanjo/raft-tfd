@@ -30,6 +30,7 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
             responseObserver.onError(new StatusException(Status.INVALID_ARGUMENT.withDescription(message)));
             return;
         }
+
         responseObserver.onNext(handler.get().processRequest(request.getId(), request.getLabel(), request.getData(), request.getTimestamp()));
         responseObserver.onCompleted();
     }

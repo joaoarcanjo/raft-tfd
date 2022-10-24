@@ -9,7 +9,7 @@ import java.util.*;
 public class EventLogic {
     public enum Events { ADD, GET }
 
-    private final Set<String> receivedData;
+    public final Set<String> receivedData;
     private final Map<String, EventHandler> eventHandlers;
 
     public EventLogic() {
