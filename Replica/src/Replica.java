@@ -1,4 +1,6 @@
+import events.AddEvent;
 import events.EventLogic;
+import events.GetEvent;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import com.google.protobuf.Timestamp;
@@ -7,6 +9,7 @@ import replica.Result;
 import replica.ServerGrpc;
 import streamobservers.ClientStreamObserver;
 import utils.Pair;
+import utils.Utils;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -15,22 +18,31 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Condition;
 
 public class Replica {
     /**
      * Each position of the list correspond to an id of a replica, which contains its socket address
      */
     private static final List<Pair<ReplicaAddress, ServerGrpc.ServerStub>> replicas = new ArrayList<>();
+    private static Thread serverThread;
+    private static Thread resultsThread;
     private static EventLogic eventLogic;
+    private static Condition requestCondition;
 
     public static final BlockingQueue<Result> blockingQueue = new LinkedBlockingQueue<>();
 
     private static boolean terminate = false;
     private static AtomicInteger waitingResults;
     private static AtomicReference<Timestamp> lastRequestTimestamp;
+    /**
+     * Identifier of the current replica
+     */
     private static int replicaId;
+    private static State state;
 
     /**
      * Initializes the client communication channel
@@ -73,7 +85,7 @@ public class Replica {
             int observedValue;
             while (!terminate) {
                 try {
-                    result = blockingQueue.take();
+                    result = blockingQueue.take(); // TODO: Place signal somewhere around here
 
                     observedValue = waitingResults.get();
                     if (observedValue > 0 && !waitingResults.compareAndSet(observedValue, --observedValue)) {
@@ -114,8 +126,9 @@ public class Replica {
         eventLogic = new EventLogic();
         waitingResults = new AtomicInteger(0);
         lastRequestTimestamp = new AtomicReference<>(null);
-        GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic);
-        initResultsThread();
+        serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic);
+        resultsThread = initResultsThread();
+        state = new State();
     }
 
     /**
@@ -145,13 +158,22 @@ public class Replica {
      */
     private static void invoke(int destinyReplicaId, String requestLabel, String requestData, Timestamp timestamp) {
         if (destinyReplicaId == replicaId) {
-            System.out.println("ResultList: " + eventLogic.getReceivedData());
+            eventLogic.getEventHandler(requestLabel)
+                    .ifPresentOrElse(
+                            eventHandler -> eventHandler.processSelfRequest(requestLabel, requestData),
+                            () -> { throw new IllegalArgumentException("Invalid label"); }
+                    );
             resetRequestTimestamp();
             waitingResults.set(0);
             return;
         }
 
-        Request request = Request.newBuilder().setId(destinyReplicaId).setLabel(requestLabel).setData(requestData).setTimestamp(timestamp).build();
+        Request request = Request.newBuilder()
+                .setId(destinyReplicaId)
+                .setLabel(requestLabel)
+                .setData(requestData)
+                .setTimestamp(timestamp)
+                .build();
         replicas.get(destinyReplicaId).getSecond().invoke(request, new ClientStreamObserver(blockingQueue));
     }
 
@@ -163,14 +185,7 @@ public class Replica {
      * @param timestamp    timestamp of the request invocation
      */
     private static void quorumInvoke(String requestLabel, String requestData, Timestamp timestamp) {
-
-        // If the operation is an ADD, then add the data to the Replica itself
-        if (Objects.equals(requestLabel, EventLogic.Events.ADD.name())) {
-            eventLogic.receivedData.add(requestData);
-        }
-
         for (int id = 0; id < replicas.size(); id++) {
-            if (replicaId == id) continue;
             invoke(id, requestLabel, requestData, timestamp);
         }
     }
@@ -194,13 +209,17 @@ public class Replica {
      */
     private static void operations() {
         Scanner scanner = new Scanner(System.in);
-        String options = "Choose an operation: \n" + " [0] ADD string to all replicas\n" + " [1] GET set of strings from a replica\n" + " [2] Exit";
+        String options = "Choose an operation: \n" +
+                " [0] ADD string to all replicas\n" +
+                " [1] GET set of strings from a replica\n" +
+                " [2] Exit";
         while (!terminate) {
             System.out.println(options);
             System.out.print("-> ");
 
             switch (scanner.nextLine()) {
                 case "0": {
+                    // TODO: Se forem 5 réplicas, esperamos por 3 respostas ou 2 (se a replica atual não contar)?
                     if (!waitingResults.compareAndSet(0, Math.round(replicas.size() / 2f))) { // k > n/2 - 1
                         System.out.println(" * Still waiting for the majority of results...");
                         cancelOperation(scanner);
@@ -211,7 +230,7 @@ public class Replica {
 
                     Timestamp rpcTimestamp = getInstantTimestamp();
                     lastRequestTimestamp.set(rpcTimestamp);
-                    quorumInvoke(EventLogic.Events.ADD.name(), data, rpcTimestamp);
+                    quorumInvoke(AddEvent.LABEL, data, rpcTimestamp);
                     break;
                 }
                 case "1": {
@@ -224,7 +243,7 @@ public class Replica {
                     System.out.print("Replica id: \n-> ");
                     int id = Integer.parseInt(scanner.nextLine());
 
-                    while(id >= replicas.size()) {
+                    while(id < 0 || id >= replicas.size()) {
                         System.out.println("Please provide an Id that exists");
                         System.out.print("Replica id: \n-> ");
                         id = Integer.parseInt(scanner.nextLine());
@@ -232,7 +251,7 @@ public class Replica {
 
                     Timestamp rpcTimestamp = getInstantTimestamp();
                     lastRequestTimestamp.set(rpcTimestamp);
-                    invoke(id, EventLogic.Events.GET.name(), "", rpcTimestamp);
+                    invoke(id, GetEvent.LABEL, "", rpcTimestamp);
                     break;
                 }
                 case "2": {
@@ -245,6 +264,21 @@ public class Replica {
         System.exit(1);
     }
 
+    private static void leaderElection() throws InterruptedException {
+        while (true) {
+            // timer: timeout / heartbeat / requestVote / appendEntry
+            requestCondition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+
+            // if follower: no heartbeat -> changes to candidate and requests votes
+            // if follower: receives heartbeat -> resets timer and awaits
+            // if candidate: not enough votes and no heartbeat -> send requestVotes again
+            // if candidate: enough votes, change to leader and invoke heartbeats
+            // if candidate: receives heartbeat and the leader is legit, changes to follower
+            // if candidate: receives heartbeat and the leader isn't legit (lower term), continues in candidate state
+            // if leader: send heartbeats or log entries
+        }
+    }
+
     public static void main(String[] args) {
         try {
             if (args.length < 2) {
@@ -253,8 +287,9 @@ public class Replica {
             }
             initReplica(Integer.parseInt(args[0]), args[1]);
             System.out.println(" * REPLICA ID: " + replicaId + " *");
-            operations();
-        } catch (IOException e) {
+            // operations();
+            leaderElection();
+        } catch (IOException | InterruptedException e) {
             System.out.println("* ERROR * " + e);
         }
     }

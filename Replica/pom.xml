@@ -51,7 +51,7 @@
                     </descriptorRefs>
                     <archive>
                         <manifest>
-                            <mainClass>GRPCServer</mainClass>
+                            <mainClass>Replica</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
