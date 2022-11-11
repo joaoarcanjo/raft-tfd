@@ -1,6 +1,5 @@
-import events.AddEvent;
-import events.EventLogic;
-import events.GetEvent;
+import com.google.gson.Gson;
+import events.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import com.google.protobuf.Timestamp;
@@ -19,9 +18,11 @@ import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class Replica {
     /**
@@ -31,7 +32,7 @@ public class Replica {
     private static Thread serverThread;
     private static Thread resultsThread;
     private static EventLogic eventLogic;
-    private static Condition requestCondition;
+    private static Condition condition;
 
     public static final BlockingQueue<Result> blockingQueue = new LinkedBlockingQueue<>();
 
@@ -87,6 +88,9 @@ public class Replica {
                 try {
                     result = blockingQueue.take(); // TODO: Place signal somewhere around here
 
+                    if(state.getCurrentTerm() < Integer.parseInt(result.getResultMessage())) {
+                        condition.notify();
+                    }
                     observedValue = waitingResults.get();
                     if (observedValue > 0 && !waitingResults.compareAndSet(observedValue, --observedValue)) {
                         throw new IllegalStateException("Some concurrent problem is happening...");
@@ -98,6 +102,7 @@ public class Replica {
                     // If the timestamps are different, then a result from a previous request arrived
                     if (lastRequestTimestamp.get() == null || !lastRequestTimestamp.get().equals(result.getTimestamp()))
                         continue;
+                    waitingResults.notify();
                     resetRequestTimestamp();
                     if (result.hasResults()) {
                         System.out.println("ResultList: " + result.getResults().getListList());
@@ -122,8 +127,9 @@ public class Replica {
      */
     private static void initReplica(int id, String configFilePath) throws IOException {
         replicaId = id;
+        condition = new ReentrantLock().newCondition();
         readConfigFile(configFilePath);
-        eventLogic = new EventLogic();
+        eventLogic = new EventLogic(condition);
         waitingResults = new AtomicInteger(0);
         lastRequestTimestamp = new AtomicReference<>(null);
         serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic);
@@ -264,15 +270,66 @@ public class Replica {
         System.exit(1);
     }
 
+    static class RequestVoteArgs {
+        public int term;
+        public int candidateId;
+        public int lastLogIndex;
+        public int lastLogTerm;
+
+        public RequestVoteArgs(int term, int candidateId, int lastLogIndex, int lastLogTerm) {
+            this.term = term;
+            this.candidateId = candidateId;
+            this.lastLogIndex = lastLogIndex;
+            this.lastLogTerm = lastLogTerm;
+        }
+    }
+
+    private static String getRequestVoteArgs() {
+        RequestVoteArgs requestVoteArgs = new RequestVoteArgs(
+                state.getCurrentTerm(),
+                replicaId,
+                state.getLastLogIndex(),
+                state.getLastLogTerm()
+        );
+        return new Gson().toJson(requestVoteArgs);
+    }
+
+    private static void heartbeat() throws InterruptedException {
+        //quando recebe algo de um follower com um term superior
+        do {
+            quorumInvoke(AppendEntriesEvent.LABEL, "", getInstantTimestamp());
+        } while(condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS));
+    }
+
     private static void leaderElection() throws InterruptedException {
         while (true) {
             // timer: timeout / heartbeat / requestVote / appendEntry
-            requestCondition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+            boolean heartbeat = false;
+            if (state.getCurrentState() != State.ReplicaState.CANDIDATE) {
+                heartbeat = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+            }
+            if(!heartbeat) {
+                //vai para candidate
+                state.setCurrentState(State.ReplicaState.CANDIDATE);
+                state.incCurrentTerm();
 
-            // if follower: no heartbeat -> changes to candidate and requests votes
-            // if follower: receives heartbeat -> resets timer and awaits
-            // if candidate: not enough votes and no heartbeat -> send requestVotes again
-            // if candidate: enough votes, change to leader and invoke heartbeats
+                Timestamp rpcTimestamp = getInstantTimestamp();
+                quorumInvoke(RequestVoteEvent.LABEL, getRequestVoteArgs(), rpcTimestamp);
+
+                boolean notified = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+                if (notified && waitingResults.get() == 0) {
+                    state.setCurrentState(State.ReplicaState.LEADER);
+                } else {
+                    heartbeat();
+                    state.setCurrentState(State.ReplicaState.FOLLOWER);
+                }
+            }
+
+            // if follower: no heartbeat -> changes to candidate and requests votes //OK
+            // if follower: receives heartbeat -> resets timer and awaits //OK
+            // if follower: receives a requestVote -> ?
+            // if candidate: not enough votes and no heartbeat -> send requestVotes again //OK
+            // if candidate: enough votes, change to leader and invoke heartbeats //OK
             // if candidate: receives heartbeat and the leader is legit, changes to follower
             // if candidate: receives heartbeat and the leader isn't legit (lower term), continues in candidate state
             // if leader: send heartbeats or log entries

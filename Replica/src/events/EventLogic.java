@@ -1,17 +1,18 @@
 package events;
 
 import java.util.*;
+import java.util.concurrent.locks.Condition;
 
 public class EventLogic {
     private final Set<String> receivedData;
     private final Map<String, EventHandler> eventHandlers;
 
-    public EventLogic() {
+    public EventLogic(Condition condition) {
         receivedData = new HashSet<>();
         eventHandlers = new HashMap<>();
         registerHandler(AddEvent.LABEL, new AddEvent(this));
         registerHandler(GetEvent.LABEL, new GetEvent(this));
-        registerHandler(AppendEntriesEvent.LABEL, new AppendEntriesEvent());
+        registerHandler(AppendEntriesEvent.LABEL, new AppendEntriesEvent(condition));
         registerHandler(RequestVoteEvent.LABEL, new RequestVoteEvent());
     }
 

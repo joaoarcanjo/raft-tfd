@@ -10,6 +10,7 @@ public class State {
     private int currentTerm;
     private int votedFor;
     private ReplicaState currentState;
+    //Command and term
     private final LinkedList<Pair<String, Integer>> log;
 
     public State() {
@@ -23,8 +24,8 @@ public class State {
         return currentTerm;
     }
 
-    public void setCurrentTerm(int currentTerm) {
-        this.currentTerm = currentTerm;
+    public void incCurrentTerm() {
+        ++currentTerm;
     }
 
     public int getVotedFor() {
@@ -49,5 +50,13 @@ public class State {
 
     public boolean addToLog(String command, int term) {
         return log.add(new Pair<>(command, term));
+    }
+
+    public int getLastLogIndex() {
+        return log.size();
+    }
+
+    public int getLastLogTerm() {
+        return log.getLast().getSecond();
     }
 }
