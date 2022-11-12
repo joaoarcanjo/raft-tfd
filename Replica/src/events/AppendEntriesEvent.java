@@ -12,7 +12,6 @@ public class AppendEntriesEvent implements EventHandler {
     public static final String LABEL = "APPEND";
     private final Condition condition;
     private final ReentrantLock monitor;
-
     private final State state;
 
     public AppendEntriesEvent(ReentrantLock monitor, Condition condition, State state) {
@@ -23,12 +22,20 @@ public class AppendEntriesEvent implements EventHandler {
 
     @Override
     public Result processRequest(int senderId, String label, String data, Timestamp timestamp) {
+        System.out.println("Heartbeat received");
         monitor.lock();
         try {
             AppendEntriesRPC.AppendEntriesArgs received = AppendEntriesRPC.appendEntriesArgsFromJson(data);
 
-            if (received.entries.isEmpty() && received.term > state.getCurrentTerm()) {
-                condition.notify(); // Notify leader so that the while breaks, also, if its follower, reset loop
+            if(received.term >= state.getCurrentTerm()) {
+                state.setCurrentTerm(received.term);
+
+                //If it is a heartbeat.
+                if(received.entries.isEmpty()) {
+                    condition.signal();
+                }
+                // Notify the condition because receives a heartbeat
+                // Notify leader so that the while breaks, also, if its follower, reset loop
             }
             return null;
         } finally {
@@ -38,6 +45,6 @@ public class AppendEntriesEvent implements EventHandler {
 
     @Override
     public void processSelfRequest(String label, String data) {
-
+        System.out.println("Self heartbeat received :)");
     }
 }

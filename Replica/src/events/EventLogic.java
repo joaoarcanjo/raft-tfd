@@ -16,7 +16,7 @@ public class EventLogic {
         registerHandler(AddEvent.LABEL, new AddEvent(this));
         registerHandler(GetEvent.LABEL, new GetEvent(this));
         registerHandler(AppendEntriesEvent.LABEL, new AppendEntriesEvent(monitor, condition, state));
-        registerHandler(RequestVoteEvent.LABEL, new RequestVoteEvent(state));
+        registerHandler(RequestVoteEvent.LABEL, new RequestVoteEvent(monitor, condition,state));
     }
 
     private void registerHandler(String requestLabel, EventHandler handler) {

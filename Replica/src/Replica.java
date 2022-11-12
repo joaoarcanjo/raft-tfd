@@ -1,4 +1,5 @@
 import events.*;
+import events.models.AppendEntriesRPC;
 import events.models.RequestVoteRPC;
 import events.models.State;
 import io.grpc.ManagedChannel;
@@ -90,23 +91,27 @@ public class Replica {
                 while (!terminate) {
                     try {
                         monitor.unlock();
-                        result = blockingQueue.take(); // TODO: Place signal somewhere around here
+                        result = blockingQueue.take();
                         monitor.lock();
-                        if (state.getCurrentTerm() < Integer.parseInt(result.getResultMessage())) {
-                            condition.notify();
+
+                        if (state.getCurrentState() == State.ReplicaState.CANDIDATE) {
+                            RequestVoteRPC.ResultVote received = RequestVoteRPC.resultVoteFromJson(result.getResultMessage());
+                            if (state.getCurrentTerm() < received.term) {
+                                state.setCurrentTerm(received.term);
+                                condition.signal();
+                            }
+
+                            if (!received.vote) {
+                                continue;
+                            }
                         }
-                        observedValue = waitingResults.get();
 
-                        RequestVoteRPC.ResultVote received = RequestVoteRPC.resultVoteFromJson(result.getResultMessage());
-
-                        if (state.getCurrentTerm() < received.term) {
-                            state.setCurrentTerm(received.term);
-                            state.setCurrentState(State.ReplicaState.FOLLOWER);
-                        }
-
-                        if (!received.vote) {
+                        if(state.getCurrentState() == State.ReplicaState.LEADER) {
+                            waitingResults.set(0); //verify later
                             continue;
                         }
+
+                        observedValue = waitingResults.get();
 
                         if (observedValue > 0 && !waitingResults.compareAndSet(observedValue, --observedValue)) {
                             throw new IllegalStateException("Some concurrent problem is happening...");
@@ -115,10 +120,14 @@ public class Replica {
                             System.out.println("ResultMessage from " + result.getId() + ": " + result.getResultMessage());
                             continue;
                         }
+                        if(state.getCurrentState() == State.ReplicaState.CANDIDATE && observedValue == 0) {
+                            condition.signal();
+                        }
+
                         // If the timestamps are different, then a result from a previous request arrived
                         if (lastRequestTimestamp.get() == null || !lastRequestTimestamp.get().equals(result.getTimestamp()))
                             continue;
-                        condition.notify();
+
                         resetRequestTimestamp();
                         if (result.hasResults()) {
                             System.out.println("ResultList: " + result.getResults().getListList());
@@ -151,10 +160,10 @@ public class Replica {
         readConfigFile(configFilePath);
         waitingResults = new AtomicInteger(0);
         lastRequestTimestamp = new AtomicReference<>(null);
-        serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic);
         resultsThread = initResultsThread();
         state = new State();
         eventLogic = new EventLogic(monitor, condition, state);
+        serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic);
 
     }
 
@@ -192,8 +201,9 @@ public class Replica {
                                 throw new IllegalArgumentException("Invalid label");
                             }
                     );
-            resetRequestTimestamp();
-            waitingResults.set(0);
+            //resetRequestTimestamp(); //?
+            //waitingResults.set(0); //?
+            //waitingResults.decrementAndGet();
             return;
         }
 
@@ -295,31 +305,40 @@ public class Replica {
 
     private static void heartbeat() throws InterruptedException {
         do {
-            quorumInvoke(AppendEntriesEvent.LABEL, "", getInstantTimestamp());
-        } while (!condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS));
+            System.out.println("Start sending heartbeats!!");
+            Timestamp rpcTimestamp = getInstantTimestamp();
+            lastRequestTimestamp.set(rpcTimestamp);
+
+            quorumInvoke(
+                    AppendEntriesEvent.LABEL,
+                    AppendEntriesRPC.appendEntriesArgsToJson(state, replicaId, new LinkedList<>()),
+                    rpcTimestamp
+            );
+
+        } while(!condition.await(Utils.randomizedTimer(2, 5), TimeUnit.SECONDS));
     }
 
     private static void leaderElection() throws InterruptedException {
         monitor.lock();
-        System.out.println("oi");
         try {
             while (true) {
                 // timer: timeout / heartbeat / requestVote / appendEntry
-                boolean heartbeat = false;
-                if (state.getCurrentState() == State.ReplicaState.FOLLOWER) {                 // If follower, wait for heartbeat
-                    System.out.println("waiting for heartbeat - current term: " + state.getCurrentTerm());
-                    heartbeat = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+                boolean notified = false;
+                if (state.getCurrentState() == State.ReplicaState.FOLLOWER) {
+                    System.out.println("-Waiting for heartbeat - current term: " + state.getCurrentTerm());
+
+                    int time = Utils.randomizedTimer(10, 15);
+                    System.out.println(" -> Will wait: " + time + "seconds for heartbeat");
+                    notified = condition.await(time, TimeUnit.SECONDS);
                 }
-                if (!heartbeat) {
+
+                if (!notified) {
                     state.incCurrentTerm();
                     state.setCurrentState(State.ReplicaState.CANDIDATE);
-                    System.out.println("expired.. switching into candidate - current term: " + state.getCurrentTerm());
+                    System.out.println("Candidate - current term: " + state.getCurrentTerm());
 
-
-                    if (!waitingResults.compareAndSet(0, Math.round(replicas.size() / 2f))) {
-                        System.out.println("Something went wrong :)");
-                    }
-
+                    System.out.println("Will wait for " + replicas.size() / 2 + " votes.");
+                    waitingResults.set(replicas.size() / 2);
 
                     Timestamp rpcTimestamp = getInstantTimestamp();
                     lastRequestTimestamp.set(rpcTimestamp);
@@ -328,17 +347,21 @@ public class Replica {
                             RequestVoteRPC.requestVoteArgsToJson(state, replicaId),
                             rpcTimestamp);
 
-                    boolean notified = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+                    int time = Utils.randomizedTimer(5, 15);
+                    System.out.println(" -> Will wait: " + time + "seconds for votes");
+                    notified = condition.await(time, TimeUnit.SECONDS);
 
                     //Se tiver sido notificado e ter obtido a maioria dos votos, vai ser lider
                     if (notified && waitingResults.get() == 0) {
-                        System.out.println("look at me, im the leader now - current term: " + state.getCurrentTerm());
+                        System.out.println("Switch to leader - current term: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.LEADER);
                         heartbeat();
+                        System.out.println("Switch to follower");
+                        state.setCurrentState(State.ReplicaState.FOLLOWER);
                     }
                     //se foi notificado é porque recebeu um heartbeat, há outro lider
                     else if (notified) {
-                        System.out.println("follow the leader - current term: " + state.getCurrentTerm());
+                        System.out.println("Switch to follower: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.FOLLOWER);
                     }
                 }
