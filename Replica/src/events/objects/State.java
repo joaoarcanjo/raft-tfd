@@ -1,4 +1,4 @@
-package events;
+package events.objects;
 
 import utils.Pair;
 
@@ -29,6 +29,8 @@ public class State {
     public void incCurrentTerm() {
         ++currentTerm;
     }
+
+    public void setCurrentTerm(int newTerm) { currentTerm = newTerm; }
 
     public int getVotedFor() {
         return votedFor;

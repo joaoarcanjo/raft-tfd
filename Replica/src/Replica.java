@@ -1,4 +1,6 @@
 import events.*;
+import events.objects.RequestVoteRPC;
+import events.objects.State;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import com.google.protobuf.Timestamp;
@@ -86,10 +88,14 @@ public class Replica {
                 try {
                     result = blockingQueue.take(); // TODO: Place signal somewhere around here
 
-                    if(state.getCurrentTerm() < Integer.parseInt(result.getResultMessage())) {
+                    if (state.getCurrentTerm() < Integer.parseInt(result.getResultMessage())) {
                         condition.notify();
                     }
                     observedValue = waitingResults.get();
+
+                    //TODO:
+
+
                     if (observedValue > 0 && !waitingResults.compareAndSet(observedValue, --observedValue)) {
                         throw new IllegalStateException("Some concurrent problem is happening...");
                     }
@@ -165,7 +171,9 @@ public class Replica {
             eventLogic.getEventHandler(requestLabel)
                     .ifPresentOrElse(
                             eventHandler -> eventHandler.processSelfRequest(requestLabel, requestData),
-                            () -> { throw new IllegalArgumentException("Invalid label"); }
+                            () -> {
+                                throw new IllegalArgumentException("Invalid label");
+                            }
                     );
             resetRequestTimestamp();
             waitingResults.set(0);
@@ -247,7 +255,7 @@ public class Replica {
                     System.out.print("Replica id: \n-> ");
                     int id = Integer.parseInt(scanner.nextLine());
 
-                    while(id < 0 || id >= replicas.size()) {
+                    while (id < 0 || id >= replicas.size()) {
                         System.out.println("Please provide an Id that exists");
                         System.out.print("Replica id: \n-> ");
                         id = Integer.parseInt(scanner.nextLine());
@@ -271,27 +279,35 @@ public class Replica {
     private static void heartbeat() throws InterruptedException {
         do {
             quorumInvoke(AppendEntriesEvent.LABEL, "", getInstantTimestamp());
-        } while(condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS));
+        } while (!condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS));
     }
 
     private static void leaderElection() throws InterruptedException {
         while (true) {
             // timer: timeout / heartbeat / requestVote / appendEntry
             boolean heartbeat = false;
-            if (state.getCurrentState() != State.ReplicaState.CANDIDATE) {
+            if (state.getCurrentState() == State.ReplicaState.FOLLOWER) {                 // If follower, wait for heartbeat
                 heartbeat = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
             }
-            if(!heartbeat) {
+            if (!heartbeat) {
                 state.incCurrentTerm();
                 state.setCurrentState(State.ReplicaState.CANDIDATE);
 
+
+                if (!waitingResults.compareAndSet(0, Math.round(replicas.size() / 2f))) {
+                    System.out.println("Something went wrong :)");
+                }
+
+
                 Timestamp rpcTimestamp = getInstantTimestamp();
+                lastRequestTimestamp.set(rpcTimestamp);
                 quorumInvoke(
                         RequestVoteEvent.LABEL,
                         RequestVoteRPC.requestVoteArgsToJson(state, replicaId),
                         rpcTimestamp);
 
                 boolean notified = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+
                 //Se tiver sido notificado e ter obtido a maioria dos votos, vai ser lider
                 if (notified && waitingResults.get() == 0) {
                     state.setCurrentState(State.ReplicaState.LEADER);

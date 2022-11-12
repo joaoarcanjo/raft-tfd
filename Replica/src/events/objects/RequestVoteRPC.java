@@ -1,4 +1,4 @@
-package events;
+package events.objects;
 
 import com.google.gson.Gson;
 
