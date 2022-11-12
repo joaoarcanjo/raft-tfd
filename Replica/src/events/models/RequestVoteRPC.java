@@ -1,4 +1,4 @@
-package events.objects;
+package events.models;
 
 import com.google.gson.Gson;
 
@@ -14,6 +14,16 @@ public class RequestVoteRPC {
             this.candidateId = candidateId;
             this.lastLogIndex = state.getLastLogIndex();
             this.lastLogTerm = state.getLastLogTerm();
+        }
+    }
+
+    public static class ResultVote {
+
+        public int term;
+        public boolean vote;
+        public ResultVote(int term, boolean vote) {
+            this.term = term;
+            this.vote = vote;
         }
     }
 
@@ -35,6 +45,26 @@ public class RequestVoteRPC {
     public static RequestVoteArgs requestVoteArgsFromJson(String json) {
         return new Gson().fromJson(json, RequestVoteArgs.class);
     }
+
+    /**
+     * Receives a string with json format with the arguments and will return an ResultVote object.
+     * @param json
+     * @return
+     */
+    public static ResultVote resultVoteFromJson(String json) {
+        return new Gson().fromJson(json, ResultVote.class);
+    }
+
+    /**
+     * Receives a term and the vote. Returns a string with json format with the arguments needed.
+     * @param term
+     * @param vote
+     * @return
+     */
+    public static String resultVoteToJson(int term, boolean vote) {
+        return new Gson().toJson(new ResultVote(term, vote));
+    }
+
 }
 
 

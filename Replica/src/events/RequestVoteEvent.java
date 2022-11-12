@@ -1,8 +1,8 @@
 package events;
 
 import com.google.protobuf.Timestamp;
-import events.objects.RequestVoteRPC;
-import events.objects.State;
+import events.models.RequestVoteRPC;
+import events.models.State;
 import replica.Result;
 
 public class RequestVoteEvent implements EventHandler {
@@ -17,17 +17,15 @@ public class RequestVoteEvent implements EventHandler {
     public Result processRequest(int senderId, String label, String data, Timestamp timestamp) {
         RequestVoteRPC.RequestVoteArgs requestVoteArgs = RequestVoteRPC.requestVoteArgsFromJson(data);
 
-        if(requestVoteArgs.term < state.getCurrentTerm()) {
-            return Result.newBuilder().setResultMessage(String.valueOf(state.getCurrentTerm())).build();
-        }
+        boolean vote = false; // Starts at false, because it will only turn true if there's a term superior to ours
 
         if(state.getVotedFor() == -1 || requestVoteArgs.term > state.getCurrentTerm()) {
+            vote = true;
             state.setCurrentTerm(requestVoteArgs.term);
             state.setVotedFor(requestVoteArgs.candidateId);
-            return Result.newBuilder().setResultMessage(String.valueOf(true)).build();
         }
 
-        return Result.newBuilder().setResultMessage(String.valueOf(false)).build();
+        return Result.newBuilder().setResultMessage(RequestVoteRPC.resultVoteToJson(state.getCurrentTerm(), vote)).build();
     }
 
     @Override

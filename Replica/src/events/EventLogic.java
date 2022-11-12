@@ -1,20 +1,21 @@
 package events;
 
-import events.objects.State;
+import events.models.State;
 
 import java.util.*;
 import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class EventLogic {
     private final Set<String> receivedData;
     private final Map<String, EventHandler> eventHandlers;
 
-    public EventLogic(Condition condition, State state) {
+    public EventLogic(ReentrantLock monitor, Condition condition, State state) {
         receivedData = new HashSet<>();
         eventHandlers = new HashMap<>();
         registerHandler(AddEvent.LABEL, new AddEvent(this));
         registerHandler(GetEvent.LABEL, new GetEvent(this));
-        registerHandler(AppendEntriesEvent.LABEL, new AppendEntriesEvent(condition, state));
+        registerHandler(AppendEntriesEvent.LABEL, new AppendEntriesEvent(monitor, condition, state));
         registerHandler(RequestVoteEvent.LABEL, new RequestVoteEvent(state));
     }
 

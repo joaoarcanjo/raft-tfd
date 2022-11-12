@@ -1,6 +1,6 @@
 import events.*;
-import events.objects.RequestVoteRPC;
-import events.objects.State;
+import events.models.RequestVoteRPC;
+import events.models.State;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import com.google.protobuf.Timestamp;
@@ -33,6 +33,7 @@ public class Replica {
     private static Thread resultsThread;
     private static EventLogic eventLogic;
     private static Condition condition;
+    private static ReentrantLock monitor;
 
     public static final BlockingQueue<Result> blockingQueue = new LinkedBlockingQueue<>();
 
@@ -82,40 +83,54 @@ public class Replica {
      */
     private static Thread initResultsThread() {
         Thread resultsThread = new Thread(() -> {
-            Result result;
-            int observedValue;
-            while (!terminate) {
-                try {
-                    result = blockingQueue.take(); // TODO: Place signal somewhere around here
+            monitor.lock();
+            try {
+                Result result;
+                int observedValue;
+                while (!terminate) {
+                    try {
+                        monitor.unlock();
+                        result = blockingQueue.take(); // TODO: Place signal somewhere around here
+                        monitor.lock();
+                        if (state.getCurrentTerm() < Integer.parseInt(result.getResultMessage())) {
+                            condition.notify();
+                        }
+                        observedValue = waitingResults.get();
 
-                    if (state.getCurrentTerm() < Integer.parseInt(result.getResultMessage())) {
+                        RequestVoteRPC.ResultVote received = RequestVoteRPC.resultVoteFromJson(result.getResultMessage());
+
+                        if (state.getCurrentTerm() < received.term) {
+                            state.setCurrentTerm(received.term);
+                            state.setCurrentState(State.ReplicaState.FOLLOWER);
+                        }
+
+                        if (!received.vote) {
+                            continue;
+                        }
+
+                        if (observedValue > 0 && !waitingResults.compareAndSet(observedValue, --observedValue)) {
+                            throw new IllegalStateException("Some concurrent problem is happening...");
+                        }
+                        if (observedValue > 0) {
+                            System.out.println("ResultMessage from " + result.getId() + ": " + result.getResultMessage());
+                            continue;
+                        }
+                        // If the timestamps are different, then a result from a previous request arrived
+                        if (lastRequestTimestamp.get() == null || !lastRequestTimestamp.get().equals(result.getTimestamp()))
+                            continue;
                         condition.notify();
-                    }
-                    observedValue = waitingResults.get();
-
-                    //TODO:
-
-
-                    if (observedValue > 0 && !waitingResults.compareAndSet(observedValue, --observedValue)) {
-                        throw new IllegalStateException("Some concurrent problem is happening...");
-                    }
-                    if (observedValue > 0) {
+                        resetRequestTimestamp();
+                        if (result.hasResults()) {
+                            System.out.println("ResultList: " + result.getResults().getListList());
+                            continue;
+                        }
                         System.out.println("ResultMessage from " + result.getId() + ": " + result.getResultMessage());
-                        continue;
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
                     }
-                    // If the timestamps are different, then a result from a previous request arrived
-                    if (lastRequestTimestamp.get() == null || !lastRequestTimestamp.get().equals(result.getTimestamp()))
-                        continue;
-                    waitingResults.notify();
-                    resetRequestTimestamp();
-                    if (result.hasResults()) {
-                        System.out.println("ResultList: " + result.getResults().getListList());
-                        continue;
-                    }
-                    System.out.println("ResultMessage from " + result.getId() + ": " + result.getResultMessage());
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
                 }
+            } finally {
+                monitor.unlock();
             }
         });
         resultsThread.start();
@@ -131,14 +146,16 @@ public class Replica {
      */
     private static void initReplica(int id, String configFilePath) throws IOException {
         replicaId = id;
-        condition = new ReentrantLock().newCondition();
+        monitor = new ReentrantLock();
+        condition = monitor.newCondition();
         readConfigFile(configFilePath);
-        eventLogic = new EventLogic(condition, state);
         waitingResults = new AtomicInteger(0);
         lastRequestTimestamp = new AtomicReference<>(null);
         serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic);
         resultsThread = initResultsThread();
         state = new State();
+        eventLogic = new EventLogic(monitor, condition, state);
+
     }
 
     /**
@@ -283,50 +300,60 @@ public class Replica {
     }
 
     private static void leaderElection() throws InterruptedException {
-        while (true) {
-            // timer: timeout / heartbeat / requestVote / appendEntry
-            boolean heartbeat = false;
-            if (state.getCurrentState() == State.ReplicaState.FOLLOWER) {                 // If follower, wait for heartbeat
-                heartbeat = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+        monitor.lock();
+        System.out.println("oi");
+        try {
+            while (true) {
+                // timer: timeout / heartbeat / requestVote / appendEntry
+                boolean heartbeat = false;
+                if (state.getCurrentState() == State.ReplicaState.FOLLOWER) {                 // If follower, wait for heartbeat
+                    System.out.println("waiting for heartbeat - current term: " + state.getCurrentTerm());
+                    heartbeat = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+                }
+                if (!heartbeat) {
+                    state.incCurrentTerm();
+                    state.setCurrentState(State.ReplicaState.CANDIDATE);
+                    System.out.println("expired.. switching into candidate - current term: " + state.getCurrentTerm());
+
+
+                    if (!waitingResults.compareAndSet(0, Math.round(replicas.size() / 2f))) {
+                        System.out.println("Something went wrong :)");
+                    }
+
+
+                    Timestamp rpcTimestamp = getInstantTimestamp();
+                    lastRequestTimestamp.set(rpcTimestamp);
+                    quorumInvoke(
+                            RequestVoteEvent.LABEL,
+                            RequestVoteRPC.requestVoteArgsToJson(state, replicaId),
+                            rpcTimestamp);
+
+                    boolean notified = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+
+                    //Se tiver sido notificado e ter obtido a maioria dos votos, vai ser lider
+                    if (notified && waitingResults.get() == 0) {
+                        System.out.println("look at me, im the leader now - current term: " + state.getCurrentTerm());
+                        state.setCurrentState(State.ReplicaState.LEADER);
+                        heartbeat();
+                    }
+                    //se foi notificado é porque recebeu um heartbeat, há outro lider
+                    else if (notified) {
+                        System.out.println("follow the leader - current term: " + state.getCurrentTerm());
+                        state.setCurrentState(State.ReplicaState.FOLLOWER);
+                    }
+                }
+
+                // if follower: no heartbeat -> changes to candidate and requests votes //OK
+                // if follower: receives heartbeat -> resets timer and awaits //OK
+                // if follower: receives a requestVote -> ?
+                // if candidate: not enough votes and no heartbeat -> send requestVotes again //OK
+                // if candidate: enough votes, change to leader and invoke heartbeats //OK
+                // if candidate: receives heartbeat and the leader is legit, changes to follower
+                // if candidate: receives heartbeat and the leader isn't legit (lower term), continues in candidate state
+                // if leader: send heartbeats or log entries
             }
-            if (!heartbeat) {
-                state.incCurrentTerm();
-                state.setCurrentState(State.ReplicaState.CANDIDATE);
-
-
-                if (!waitingResults.compareAndSet(0, Math.round(replicas.size() / 2f))) {
-                    System.out.println("Something went wrong :)");
-                }
-
-
-                Timestamp rpcTimestamp = getInstantTimestamp();
-                lastRequestTimestamp.set(rpcTimestamp);
-                quorumInvoke(
-                        RequestVoteEvent.LABEL,
-                        RequestVoteRPC.requestVoteArgsToJson(state, replicaId),
-                        rpcTimestamp);
-
-                boolean notified = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
-
-                //Se tiver sido notificado e ter obtido a maioria dos votos, vai ser lider
-                if (notified && waitingResults.get() == 0) {
-                    state.setCurrentState(State.ReplicaState.LEADER);
-                    heartbeat();
-                }
-                //se foi notificado é porque recebeu um heartbeat, há outro lider
-                else if (notified) {
-                    state.setCurrentState(State.ReplicaState.FOLLOWER);
-                }
-            }
-
-            // if follower: no heartbeat -> changes to candidate and requests votes //OK
-            // if follower: receives heartbeat -> resets timer and awaits //OK
-            // if follower: receives a requestVote -> ?
-            // if candidate: not enough votes and no heartbeat -> send requestVotes again //OK
-            // if candidate: enough votes, change to leader and invoke heartbeats //OK
-            // if candidate: receives heartbeat and the leader is legit, changes to follower
-            // if candidate: receives heartbeat and the leader isn't legit (lower term), continues in candidate state
-            // if leader: send heartbeats or log entries
+        } finally {
+            monitor.unlock();
         }
     }
 
