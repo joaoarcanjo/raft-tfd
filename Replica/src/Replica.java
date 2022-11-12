@@ -1,4 +1,3 @@
-import com.google.gson.Gson;
 import events.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -18,7 +17,6 @@ import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
@@ -129,7 +127,7 @@ public class Replica {
         replicaId = id;
         condition = new ReentrantLock().newCondition();
         readConfigFile(configFilePath);
-        eventLogic = new EventLogic(condition);
+        eventLogic = new EventLogic(condition, state);
         waitingResults = new AtomicInteger(0);
         lastRequestTimestamp = new AtomicReference<>(null);
         serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic);
@@ -270,32 +268,7 @@ public class Replica {
         System.exit(1);
     }
 
-    static class RequestVoteArgs {
-        public int term;
-        public int candidateId;
-        public int lastLogIndex;
-        public int lastLogTerm;
-
-        public RequestVoteArgs(int term, int candidateId, int lastLogIndex, int lastLogTerm) {
-            this.term = term;
-            this.candidateId = candidateId;
-            this.lastLogIndex = lastLogIndex;
-            this.lastLogTerm = lastLogTerm;
-        }
-    }
-
-    private static String getRequestVoteArgs() {
-        RequestVoteArgs requestVoteArgs = new RequestVoteArgs(
-                state.getCurrentTerm(),
-                replicaId,
-                state.getLastLogIndex(),
-                state.getLastLogTerm()
-        );
-        return new Gson().toJson(requestVoteArgs);
-    }
-
     private static void heartbeat() throws InterruptedException {
-        //quando recebe algo de um follower com um term superior
         do {
             quorumInvoke(AppendEntriesEvent.LABEL, "", getInstantTimestamp());
         } while(condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS));
@@ -309,18 +282,23 @@ public class Replica {
                 heartbeat = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
             }
             if(!heartbeat) {
-                //vai para candidate
-                state.setCurrentState(State.ReplicaState.CANDIDATE);
                 state.incCurrentTerm();
+                state.setCurrentState(State.ReplicaState.CANDIDATE);
 
                 Timestamp rpcTimestamp = getInstantTimestamp();
-                quorumInvoke(RequestVoteEvent.LABEL, getRequestVoteArgs(), rpcTimestamp);
+                quorumInvoke(
+                        RequestVoteEvent.LABEL,
+                        RequestVoteRPC.requestVoteArgsToJson(state, replicaId),
+                        rpcTimestamp);
 
                 boolean notified = condition.await(Utils.randomizedTimer(5, 15), TimeUnit.SECONDS);
+                //Se tiver sido notificado e ter obtido a maioria dos votos, vai ser lider
                 if (notified && waitingResults.get() == 0) {
                     state.setCurrentState(State.ReplicaState.LEADER);
-                } else {
                     heartbeat();
+                }
+                //se foi notificado é porque recebeu um heartbeat, há outro lider
+                else if (notified) {
                     state.setCurrentState(State.ReplicaState.FOLLOWER);
                 }
             }

@@ -1,3 +1,5 @@
+package events;
+
 import utils.Pair;
 
 import java.util.LinkedList;
@@ -57,6 +59,7 @@ public class State {
     }
 
     public int getLastLogTerm() {
+        if(log.isEmpty()) return -1;
         return log.getLast().getSecond();
     }
 }

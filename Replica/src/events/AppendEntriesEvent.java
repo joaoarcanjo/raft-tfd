@@ -15,6 +15,8 @@ public class AppendEntriesEvent implements EventHandler {
 
     @Override
     public Result processRequest(int senderId, String label, String data, Timestamp timestamp) {
+        //falta verificar se o term enviado é superior ao da réplica atual, se não for, não vamos realizar notify,
+        //rejeitando o pedido realizado.
         if (data.isEmpty()) {
             condition.notify();
         }

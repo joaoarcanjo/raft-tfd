@@ -7,13 +7,13 @@ public class EventLogic {
     private final Set<String> receivedData;
     private final Map<String, EventHandler> eventHandlers;
 
-    public EventLogic(Condition condition) {
+    public EventLogic(Condition condition, State state) {
         receivedData = new HashSet<>();
         eventHandlers = new HashMap<>();
         registerHandler(AddEvent.LABEL, new AddEvent(this));
         registerHandler(GetEvent.LABEL, new GetEvent(this));
         registerHandler(AppendEntriesEvent.LABEL, new AppendEntriesEvent(condition));
-        registerHandler(RequestVoteEvent.LABEL, new RequestVoteEvent());
+        registerHandler(RequestVoteEvent.LABEL, new RequestVoteEvent(state));
     }
 
     private void registerHandler(String requestLabel, EventHandler handler) {
