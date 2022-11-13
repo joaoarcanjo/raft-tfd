@@ -408,7 +408,6 @@ public class Replica {
                 System.out.println("Usage: java -jar Replica.jar <id(>= 0)> <configFile(absolute path)>");
                 System.exit(-1);
             }
-            args[0] = auxToDelete();
             initReplica(Integer.parseInt(args[0]), args[1]);
             System.out.println(" * REPLICA ID: " + replicaId + " *");
             // operations();
@@ -416,11 +415,5 @@ public class Replica {
         } catch (IOException | InterruptedException e) {
             System.out.println("* ERROR * " + e);
         }
-    }
-
-    //apenas para poder criar varias instancias sem ter que estar a alterar o argument 0.
-    public static String auxToDelete() {
-        Scanner scanner = new Scanner(System.in);
-        return scanner.nextLine();
     }
 }
