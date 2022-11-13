@@ -48,6 +48,13 @@ public class Replica {
     private static State state;
 
     /**
+     * Leader election intervals
+     */
+    private static final Pair<Integer, Integer> SEND_HEARTBEAT_INTERVAL = new Pair<>(5, 10);
+    private static final Pair<Integer, Integer> WAIT_VOTES_INTERVAL = new Pair<>(10, 15);
+    private static final Pair<Integer, Integer> WAIT_HEARTBEAT_INTERVAL = new Pair<>(10, 15);
+
+    /**
      * Initializes the client communication channel
      *
      * @param replicaAddress address of the replica to establish the connection
@@ -103,11 +110,13 @@ public class Replica {
 
                             if (!received.vote) {
                                 continue;
+                            } else {
+                                System.out.println("--- Voted received from replica " + result.getId() + ". ---");
                             }
                         }
 
                         if(state.getCurrentState() == State.ReplicaState.LEADER) {
-                            waitingResults.set(0); //verify later
+                            waitingResults.set(0); //verify later, leader doesn't care about the waiting results.
                             continue;
                         }
 
@@ -305,7 +314,7 @@ public class Replica {
 
     private static void heartbeat() throws InterruptedException {
         do {
-            System.out.println("Start sending heartbeats!!");
+            System.out.println("--- Heartbeat sent ---");
             Timestamp rpcTimestamp = getInstantTimestamp();
             lastRequestTimestamp.set(rpcTimestamp);
 
@@ -315,30 +324,42 @@ public class Replica {
                     rpcTimestamp
             );
 
-        } while(!condition.await(Utils.randomizedTimer(2, 5), TimeUnit.SECONDS));
+        } while(!condition.await(Utils.randomizedTimer(
+                        SEND_HEARTBEAT_INTERVAL.getFirst(),
+                        SEND_HEARTBEAT_INTERVAL.getSecond()),
+                TimeUnit.SECONDS)
+        );
     }
 
     private static void leaderElection() throws InterruptedException {
         monitor.lock();
         try {
             while (true) {
-                // timer: timeout / heartbeat / requestVote / appendEntry
                 boolean notified = false;
                 if (state.getCurrentState() == State.ReplicaState.FOLLOWER) {
-                    System.out.println("-Waiting for heartbeat - current term: " + state.getCurrentTerm());
 
-                    int time = Utils.randomizedTimer(10, 15);
-                    System.out.println(" -> Will wait: " + time + "seconds for heartbeat");
+                    int time = Utils.randomizedTimer(
+                            WAIT_HEARTBEAT_INTERVAL.getFirst(),
+                            WAIT_HEARTBEAT_INTERVAL.getSecond()
+                    );
+                    System.out.println(
+                            "-> Will wait during " + time + " seconds for heartbeat, " +
+                            "current term: " + state.getCurrentTerm() + "."
+                    );
                     notified = condition.await(time, TimeUnit.SECONDS);
+                    if (!notified) {
+                        System.out.println("-> Heartbeat timeout.");
+                        System.out.println("\n-> Switch to candidate.");
+                    }
                 }
 
                 if (!notified) {
                     state.incCurrentTerm();
                     state.setCurrentState(State.ReplicaState.CANDIDATE);
-                    System.out.println("Candidate - current term: " + state.getCurrentTerm());
+                    System.out.println("--- Candidate - current term: " + state.getCurrentTerm() + ". ---");
 
-                    System.out.println("Will wait for " + replicas.size() / 2 + " votes.");
-                    waitingResults.set(replicas.size() / 2);
+                    int votesWaiting = replicas.size() / 2;
+                    waitingResults.set(votesWaiting);
 
                     Timestamp rpcTimestamp = getInstantTimestamp();
                     lastRequestTimestamp.set(rpcTimestamp);
@@ -347,21 +368,22 @@ public class Replica {
                             RequestVoteRPC.requestVoteArgsToJson(state, replicaId),
                             rpcTimestamp);
 
-                    int time = Utils.randomizedTimer(5, 15);
-                    System.out.println(" -> Will wait: " + time + "seconds for votes");
+                    int time = Utils.randomizedTimer(WAIT_VOTES_INTERVAL.getFirst(), WAIT_VOTES_INTERVAL.getSecond());
+                    System.out.println("--- Will wait during " + time + " seconds for votes. ---");
                     notified = condition.await(time, TimeUnit.SECONDS);
 
                     //Se tiver sido notificado e ter obtido a maioria dos votos, vai ser lider
                     if (notified && waitingResults.get() == 0) {
-                        System.out.println("Switch to leader - current term: " + state.getCurrentTerm());
+                        System.out.println("\n-> Switch to leader - current term: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.LEADER);
+                        System.out.println("-> Start sending heartbeats!");
                         heartbeat();
-                        System.out.println("Switch to follower");
+                        System.out.println("-> Leader role lost, switching to follower!");
                         state.setCurrentState(State.ReplicaState.FOLLOWER);
                     }
                     //se foi notificado é porque recebeu um heartbeat, há outro lider
                     else if (notified) {
-                        System.out.println("Switch to follower: " + state.getCurrentTerm());
+                        System.out.println("\nSwitch to follower: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.FOLLOWER);
                     }
                 }
@@ -386,6 +408,7 @@ public class Replica {
                 System.out.println("Usage: java -jar Replica.jar <id(>= 0)> <configFile(absolute path)>");
                 System.exit(-1);
             }
+            args[0] = auxToDelete();
             initReplica(Integer.parseInt(args[0]), args[1]);
             System.out.println(" * REPLICA ID: " + replicaId + " *");
             // operations();
@@ -393,5 +416,11 @@ public class Replica {
         } catch (IOException | InterruptedException e) {
             System.out.println("* ERROR * " + e);
         }
+    }
+
+    //apenas para poder criar varias instancias sem ter que estar a alterar o argument 0.
+    public static String auxToDelete() {
+        Scanner scanner = new Scanner(System.in);
+        return scanner.nextLine();
     }
 }

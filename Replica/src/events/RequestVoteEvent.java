@@ -26,8 +26,8 @@ public class RequestVoteEvent implements EventHandler {
 
         boolean vote = false; // Starts at false, because it will only turn true if there's a term superior to ours
 
-        System.out.println("Current term: " + state.getCurrentTerm() + "; votedFor: " + state.getVotedFor());
-        System.out.println("Term from request received: " + requestVoteArgs.term + "\n");
+        //System.out.println("--- Current term: " + state.getCurrentTerm() + "; votedFor: " + state.getVotedFor() + " ---");
+        //System.out.println("--- Term from request received: " + requestVoteArgs.term + " ---\n");
 
         if((requestVoteArgs.term == state.getCurrentTerm() && state.getVotedFor() == -1)
                 || requestVoteArgs.term > state.getCurrentTerm()) {
@@ -35,7 +35,7 @@ public class RequestVoteEvent implements EventHandler {
             state.setCurrentTerm(requestVoteArgs.term);
             state.setVotedFor(requestVoteArgs.candidateId);
             state.setCurrentState(State.ReplicaState.FOLLOWER);
-            System.out.println("Voted on " + requestVoteArgs.candidateId + "\n");
+            System.out.println("-> Voted on " + requestVoteArgs.candidateId + ".\n");
 
             monitor.lock();
             try {

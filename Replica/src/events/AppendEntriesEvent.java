@@ -22,7 +22,6 @@ public class AppendEntriesEvent implements EventHandler {
 
     @Override
     public Result processRequest(int senderId, String label, String data, Timestamp timestamp) {
-        System.out.println("Heartbeat received");
         monitor.lock();
         try {
             AppendEntriesRPC.AppendEntriesArgs received = AppendEntriesRPC.appendEntriesArgsFromJson(data);
@@ -32,6 +31,7 @@ public class AppendEntriesEvent implements EventHandler {
 
                 //If it is a heartbeat.
                 if(received.entries.isEmpty()) {
+                    System.out.println("--- Heartbeat received from" + received.leaderId + ". ---");
                     condition.signal();
                 }
                 // Notify the condition because receives a heartbeat
@@ -44,7 +44,5 @@ public class AppendEntriesEvent implements EventHandler {
     }
 
     @Override
-    public void processSelfRequest(String label, String data) {
-        System.out.println("Self heartbeat received :)");
-    }
+    public void processSelfRequest(String label, String data) {}
 }
