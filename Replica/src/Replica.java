@@ -162,6 +162,7 @@ public class Replica {
      * @param configFilePath absolute path to the configuration text file with the replicas' address
      * @throws IOException in case an I/O error occurs while reading the file
      */
+    //private static void initReplica(int id, String configFilePath, int term) throws IOException {
     private static void initReplica(int id, String configFilePath) throws IOException {
         replicaId = id;
         monitor = new ReentrantLock();
@@ -170,6 +171,7 @@ public class Replica {
         waitingResults = new AtomicInteger(0);
         lastRequestTimestamp = new AtomicReference<>(null);
         resultsThread = initResultsThread();
+        //state = new State(term);
         state = new State();
         eventLogic = new EventLogic(monitor, condition, state);
         serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic);
@@ -408,6 +410,12 @@ public class Replica {
                 System.out.println("Usage: java -jar Replica.jar <id(>= 0)> <configFile(absolute path)>");
                 System.exit(-1);
             }
+            /*int term = 0;
+            if(args.length > 2)
+                term = Integer.parseInt(args[2]);
+            System.out.println("Term: " + term);*/
+
+            //initReplica(Integer.parseInt(args[0]), args[1], term);
             initReplica(Integer.parseInt(args[0]), args[1]);
             System.out.println(" * REPLICA ID: " + replicaId + " *");
             // operations();

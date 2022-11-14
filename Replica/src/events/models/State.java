@@ -15,6 +15,9 @@ public class State {
     //Command and term
     private final LinkedList<Pair<String, Integer>> log;
 
+
+    //public State(int term) {
+    //    currentTerm = term;
     public State() {
         currentTerm = 0;
         votedFor = -1;
