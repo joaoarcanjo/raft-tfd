@@ -31,7 +31,7 @@ public class AppendEntriesEvent implements EventHandler {
 
                 //If it is a heartbeat.
                 if(received.entries.isEmpty()) {
-                    System.out.println("--- Heartbeat received from" + received.leaderId + ". ---");
+                    System.out.println("* Heartbeat received from " + received.leaderId + " *");
                     condition.signal();
                 }
                 // Notify the condition because receives a heartbeat

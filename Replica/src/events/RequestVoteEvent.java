@@ -35,7 +35,8 @@ public class RequestVoteEvent implements EventHandler {
             state.setCurrentTerm(requestVoteArgs.term);
             state.setVotedFor(requestVoteArgs.candidateId);
             state.setCurrentState(State.ReplicaState.FOLLOWER);
-            System.out.println("-> Voted on " + requestVoteArgs.candidateId + ".\n");
+            System.out.println("\n# Received request vote #");
+            System.out.println("# Voted on " + requestVoteArgs.candidateId + ".\n");
 
             monitor.lock();
             try {

@@ -19,7 +19,7 @@ public class ClientStreamObserver implements StreamObserver<Result> {
 
     @Override
     public void onError(Throwable throwable) {
-        System.out.println("* ERROR * " + throwable.getMessage());
+        // System.out.println("* ERROR * " + throwable.getMessage());
     }
 
     @Override

@@ -111,7 +111,7 @@ public class Replica {
                             if (!received.vote) {
                                 continue;
                             } else {
-                                System.out.println("--- Voted received from replica " + result.getId() + ". ---");
+                                System.out.println("# Vote received from replica " + result.getId() + " #");
                             }
                         }
 
@@ -126,7 +126,7 @@ public class Replica {
                             throw new IllegalStateException("Some concurrent problem is happening...");
                         }
                         if (observedValue > 0) {
-                            System.out.println("ResultMessage from " + result.getId() + ": " + result.getResultMessage());
+                            System.out.println("+ ResultMessage from " + result.getId() + ": " + result.getResultMessage());
                             continue;
                         }
                         if(state.getCurrentState() == State.ReplicaState.CANDIDATE && observedValue == 0) {
@@ -314,7 +314,7 @@ public class Replica {
 
     private static void heartbeat() throws InterruptedException {
         do {
-            System.out.println("--- Heartbeat sent ---");
+            System.out.println("* Heartbeats sent *");
             Timestamp rpcTimestamp = getInstantTimestamp();
             lastRequestTimestamp.set(rpcTimestamp);
 
@@ -343,20 +343,20 @@ public class Replica {
                             WAIT_HEARTBEAT_INTERVAL.getSecond()
                     );
                     System.out.println(
-                            "-> Will wait during " + time + " seconds for heartbeat, " +
-                            "current term: " + state.getCurrentTerm() + "."
+                            "--- Waiting " + time + " seconds for a heartbeat. " +
+                            "Term: " + state.getCurrentTerm() + " ---"
                     );
                     notified = condition.await(time, TimeUnit.SECONDS);
                     if (!notified) {
-                        System.out.println("-> Heartbeat timeout.");
-                        System.out.println("\n-> Switch to candidate.");
+                        System.out.println("* Heartbeat timeout *");
+                        //System.out.println("-> Switched to candidate\n");
                     }
                 }
 
                 if (!notified) {
                     state.incCurrentTerm();
                     state.setCurrentState(State.ReplicaState.CANDIDATE);
-                    System.out.println("--- Candidate - current term: " + state.getCurrentTerm() + ". ---");
+                    System.out.println("-> Switched to CANDIDATE. Term: " + state.getCurrentTerm());
 
                     int votesWaiting = replicas.size() / 2;
                     waitingResults.set(votesWaiting);
@@ -369,21 +369,21 @@ public class Replica {
                             rpcTimestamp);
 
                     int time = Utils.randomizedTimer(WAIT_VOTES_INTERVAL.getFirst(), WAIT_VOTES_INTERVAL.getSecond());
-                    System.out.println("--- Will wait during " + time + " seconds for votes. ---");
+                    System.out.println("--- Waiting " + time + " seconds for votes ---");
                     notified = condition.await(time, TimeUnit.SECONDS);
 
                     //Se tiver sido notificado e ter obtido a maioria dos votos, vai ser lider
                     if (notified && waitingResults.get() == 0) {
-                        System.out.println("\n-> Switch to leader - current term: " + state.getCurrentTerm());
+                        System.out.println("\n-> Switched to LEADER. Term: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.LEADER);
-                        System.out.println("-> Start sending heartbeats!");
+                        System.out.println("* Start sending heartbeats *");
                         heartbeat();
-                        System.out.println("-> Leader role lost, switching to follower!");
+                        System.out.println("! Leader role lost, switching to follower !");
                         state.setCurrentState(State.ReplicaState.FOLLOWER);
                     }
                     //se foi notificado é porque recebeu um heartbeat, há outro lider
                     else if (notified) {
-                        System.out.println("\nSwitch to follower: " + state.getCurrentTerm());
+                        System.out.println("\n-> Switched to FOLLOWER. Term: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.FOLLOWER);
                     }
                 }
