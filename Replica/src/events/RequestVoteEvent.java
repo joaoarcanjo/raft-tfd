@@ -28,14 +28,13 @@ public class RequestVoteEvent implements EventHandler {
 
         //System.out.println("--- Current term: " + state.getCurrentTerm() + "; votedFor: " + state.getVotedFor() + " ---");
         //System.out.println("--- Term from request received: " + requestVoteArgs.term + " ---\n");
-
+        System.out.println("\n# Received request vote #");
         if((requestVoteArgs.term == state.getCurrentTerm() && state.getVotedFor() == -1)
                 || requestVoteArgs.term > state.getCurrentTerm()) {
             vote = true;
             state.setCurrentTerm(requestVoteArgs.term);
             state.setVotedFor(requestVoteArgs.candidateId);
             state.setCurrentState(State.ReplicaState.FOLLOWER);
-            System.out.println("\n# Received request vote #");
             System.out.println("# Voted on " + requestVoteArgs.candidateId + ".\n");
 
             monitor.lock();
@@ -44,7 +43,9 @@ public class RequestVoteEvent implements EventHandler {
             } finally {
                 monitor.unlock();
             }
-        }
+        } else {
+            System.out.println("# Voted false, and update replica " + senderId + " term to: " + state.getCurrentTerm());
+        }   // TODO Quando se abre uma quarta ou quinta réplica, não recebe os heartbeats ?! WTF
 
         return Result.newBuilder()
                 .setId(senderId)
