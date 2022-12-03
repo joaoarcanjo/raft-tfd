@@ -9,24 +9,26 @@ package replica;
 service Server {
   // Invoke operation
   rpc invoke(Request) returns (Result);
+  rpc request(Request) returns (Result);
 }
 
 message Request {
   int32 id = 1;
   string label = 2;
-  string data = 3;
+  bytes data = 3;
   google.protobuf.Timestamp timestamp = 4;
 }
 
 message Result {
   oneof result {
     string resultMessage = 1;
-    ResultList results = 2;
+    bytes results = 2;
+    //ResultList results = 2;
   }
   int32 id = 3;
   google.protobuf.Timestamp timestamp = 4;
 }
-
+/*
 message ResultList {
   repeated string list = 1;
-}
+}*/

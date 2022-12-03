@@ -1,5 +1,6 @@
 package events;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import events.models.RequestVoteRPC;
 import events.models.State;
@@ -21,8 +22,8 @@ public class RequestVoteEvent implements EventHandler {
     }
 
     @Override
-    public Result processRequest(int senderId, String label, String data, Timestamp timestamp) {
-        RequestVoteRPC.RequestVoteArgs requestVoteArgs = RequestVoteRPC.requestVoteArgsFromJson(data);
+    public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
+        RequestVoteRPC.RequestVoteArgs requestVoteArgs = RequestVoteRPC.requestVoteArgsFromJson(data.toString());
 
         boolean vote = false; // Starts at false, because it will only turn true if there's a term superior to ours
 

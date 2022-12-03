@@ -1,5 +1,6 @@
 package events;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import events.models.AppendEntriesRPC;
 import events.models.State;
@@ -21,10 +22,10 @@ public class AppendEntriesEvent implements EventHandler {
     }
 
     @Override
-    public Result processRequest(int senderId, String label, String data, Timestamp timestamp) {
+    public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
         monitor.lock();
         try {
-            AppendEntriesRPC.AppendEntriesArgs received = AppendEntriesRPC.appendEntriesArgsFromJson(data);
+            AppendEntriesRPC.AppendEntriesArgs received = AppendEntriesRPC.appendEntriesArgsFromJson(data.toString());
 
             if(received.term >= state.getCurrentTerm()) {
                 state.setCurrentTerm(received.term);

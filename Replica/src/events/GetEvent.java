@@ -1,5 +1,6 @@
 package events;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import replica.Result;
 import replica.ResultList;
@@ -13,10 +14,10 @@ public class GetEvent implements EventHandler {
     }
 
     @Override
-    public Result processRequest(int senderId, String label, String data, Timestamp timestamp) {
+    public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
         EventLogic.verifyLabel(label, LABEL);
         return Result.newBuilder()
-                .setResults(ResultList.newBuilder().addAllList(eventLogic.getReceivedData()).build())
+//              .setResults(ResultList.newBuilder().addAllList(eventLogic.getReceivedData()).build())
                 .setId(senderId)
                 .setTimestamp(timestamp)
                 .build();

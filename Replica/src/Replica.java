@@ -1,3 +1,4 @@
+import com.google.protobuf.ByteString;
 import events.*;
 import events.models.AppendEntriesRPC;
 import events.models.RequestVoteRPC;
@@ -139,8 +140,8 @@ public class Replica {
                             continue;
 
                         resetRequestTimestamp();
-                        if (result.hasResults()) {
-                            System.out.println("ResultList: " + result.getResults().getListList());
+                        if (!result.getResults().isEmpty()) {
+                            System.out.println("ResultList: " + result.getResults());
                             continue;
                         }
                         System.out.println("ResultMessage from " + result.getId() + ": " + result.getResultMessage());
@@ -222,7 +223,7 @@ public class Replica {
         Request request = Request.newBuilder()
                 .setId(destinyReplicaId)
                 .setLabel(requestLabel)
-                .setData(requestData)
+                .setData(ByteString.copyFromUtf8(requestData))
                 .setTimestamp(timestamp)
                 .build();
         replicas.get(destinyReplicaId).getSecond().invoke(request, new ClientStreamObserver(blockingQueue));
@@ -246,6 +247,7 @@ public class Replica {
      *
      * @param scanner scanner to read from the standard input
      */
+    /*
     private static void cancelOperation(Scanner scanner) {
         System.out.println("Do you want to cancel the previous operation? [y/n]");
         System.out.print("-> ");
@@ -253,11 +255,12 @@ public class Replica {
         if (response.length() > 0 && response.compareTo("y") != 0) return;
         resetRequestTimestamp();
         waitingResults.set(0);
-    }
+    }*/
 
     /**
      * Menu with all the possible operations to test the system
      */
+    /*
     private static void operations() {
         Scanner scanner = new Scanner(System.in);
         String options = "Choose an operation: \n" +
@@ -313,7 +316,7 @@ public class Replica {
         }
         System.out.println(" * Replica " + replicaId + " is shutting down...");
         System.exit(1);
-    }
+    }*/
 
     private static void heartbeat() throws InterruptedException {
         do {
@@ -377,6 +380,7 @@ public class Replica {
 
                     //Se tiver sido notificado e ter obtido a maioria dos votos, vai ser lider
                     if (notified && waitingResults.get() == 0) {
+                        state.InitLeaderState(replicas.size());
                         System.out.println("\n-> Switched to LEADER. Term: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.LEADER);
                         System.out.println("* Start sending heartbeats *");

@@ -1,5 +1,6 @@
 package events;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import replica.Result;
 
@@ -12,7 +13,7 @@ public class AddEvent implements EventHandler {
     }
 
     @Override
-    public Result processRequest(int senderId, String label, String data, Timestamp timestamp) {
+    public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
         EventLogic.verifyLabel(label, LABEL);
         String resultMessage;
         if (eventLogic.addData(data))
@@ -25,7 +26,7 @@ public class AddEvent implements EventHandler {
     @Override
     public void processSelfRequest(String label, String data) {
         EventLogic.verifyLabel(label, LABEL);
-        if (eventLogic.addData(data))
+        if (eventLogic.addData(ByteString.copyFromUtf8(data)))
             System.out.println("Requested data added with success.");
         else
             System.out.println("The requested data is already in the set.");

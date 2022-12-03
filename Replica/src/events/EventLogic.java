@@ -1,5 +1,6 @@
 package events;
 
+import com.google.protobuf.ByteString;
 import events.models.State;
 
 import java.util.*;
@@ -32,8 +33,8 @@ public class EventLogic {
         return receivedData;
     }
 
-    public boolean addData(String data) {
-        return receivedData.add(data);
+    public boolean addData(ByteString data) {
+        return receivedData.add(String.valueOf(data));
     }
 
     public static void verifyLabel(String requestLabel, String handlerLabel) {
