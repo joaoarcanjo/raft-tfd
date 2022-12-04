@@ -1,5 +1,9 @@
+package common;
+
 import events.EventHandler;
 import events.EventLogic;
+import events.models.LogElement;
+import events.models.State;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.Status;
@@ -10,16 +14,64 @@ import replica.Result;
 import replica.ServerGrpc;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Optional;
 
-public class GRPCServer extends ServerGrpc.ServerImplBase {
+import static events.ClientRequestEvent.OPERATIONS;
 
+public class GRPCServer extends ServerGrpc.ServerImplBase {
     private static Server svc;
     private static Thread serverThread;
     private final EventLogic eventLogic;
 
-    public GRPCServer(EventLogic eventLogic) {
+    private final State state;
+
+    public GRPCServer(EventLogic eventLogic, State state) {
+        this.state = state;
         this.eventLogic = eventLogic;
+    }
+
+    @Override
+    public void request(Request request, StreamObserver<Result> responseObserver) {
+
+        try {
+
+            if (state.getCurrentState() != State.ReplicaState.LEADER) { // If received request while not being the leader, inform the client of the current leader
+                responseObserver.onNext(Result.newBuilder().setId(state.getCurrentLeader()).build());
+                responseObserver.onCompleted();
+                return;
+            }
+
+            if (!OPERATIONS.contains(request.getLabel())) {
+                throw new Exception();
+            }
+
+            LogElement newLogEntry = new LogElement(request.getData().toByteArray(), request.getLabel(), state.getCurrentTerm());
+
+            switch (request.getLabel()) {
+                case ("increaseBy"): {
+                    int arg = ByteBuffer.wrap(newLogEntry.getCommandArgs()).getInt();
+                    if(arg < 1 || arg > 5) {
+                        throw new Exception();
+                    }
+                    state.addToLog(newLogEntry);
+                    Replica.quorumInvoke(request.getLabel(), request.getData().toByteArray(), request.getTimestamp());
+                    break;
+                }
+                default:
+                    System.out.println("-> Unrecognizable label.");
+            }
+
+            // enviar add to log
+            // incrementar a coisa
+            // enviar commit
+            // retornar alguma informaçao
+        } catch (Exception e) {
+            Throwable th = new StatusException(Status.ABORTED.withDescription("There was a problem"));
+            responseObserver.onError(th);
+        }
+
+
     }
 
     @Override
@@ -47,11 +99,11 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
      * @param port port number for the server
      * @return the server thread instance
      */
-    public static Thread initServerThread(int port, EventLogic eventLogic) {
+    public static Thread initServerThread(int port, EventLogic eventLogic, State state) {
         serverThread = new Thread(() -> {
             svc = ServerBuilder
                     .forPort(port)
-                    .addService(new GRPCServer(eventLogic))
+                    .addService(new GRPCServer(eventLogic, state))
                     .build();
             try {
                 svc.start();

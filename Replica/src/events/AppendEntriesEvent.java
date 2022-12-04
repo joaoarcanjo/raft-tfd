@@ -27,11 +27,14 @@ public class AppendEntriesEvent implements EventHandler {
         try {
             AppendEntriesRPC.AppendEntriesArgs received = AppendEntriesRPC.appendEntriesArgsFromJson(data.toString());
 
-            if(received.term >= state.getCurrentTerm()) {
+            if (received.term >= state.getCurrentTerm()) {
                 state.setCurrentTerm(received.term);
 
                 //If it is a heartbeat.
-                if(received.entries.isEmpty()) {
+                if (received.entries.isEmpty()) {
+                    if (received.leaderId != state.getCurrentLeader()) {
+                        state.setCurrentLeader(received.leaderId);
+                    }
                     System.out.println("* Heartbeat received from " + received.leaderId + " *");
                     condition.signal();
                 }
@@ -45,5 +48,6 @@ public class AppendEntriesEvent implements EventHandler {
     }
 
     @Override
-    public void processSelfRequest(String label, String data) {}
+    public void processSelfRequest(String label, String data) {
+    }
 }

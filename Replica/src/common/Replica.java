@@ -1,3 +1,5 @@
+package common;
+
 import com.google.protobuf.ByteString;
 import events.*;
 import events.models.AppendEntriesRPC;
@@ -16,6 +18,7 @@ import utils.Utils;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
@@ -176,7 +179,7 @@ public class Replica {
         state = new State(term);
         //state = new State();
         eventLogic = new EventLogic(monitor, condition, state);
-        serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic);
+        serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic, state);
 
     }
 
@@ -205,11 +208,11 @@ public class Replica {
      * @param requestData      data to be sent in the operation
      * @param timestamp        timestamp of the request invocation
      */
-    private static void invoke(int destinyReplicaId, String requestLabel, String requestData, Timestamp timestamp) {
+    private static void invoke(int destinyReplicaId, String requestLabel, byte[] requestData, Timestamp timestamp) {
         if (destinyReplicaId == replicaId) {
             eventLogic.getEventHandler(requestLabel)
                     .ifPresentOrElse(
-                            eventHandler -> eventHandler.processSelfRequest(requestLabel, requestData),
+                            eventHandler -> eventHandler.processSelfRequest(requestLabel, ByteString.copyFrom(requestData).toStringUtf8()),
                             () -> {
                                 throw new IllegalArgumentException("Invalid label");
                             }
@@ -223,7 +226,7 @@ public class Replica {
         Request request = Request.newBuilder()
                 .setId(destinyReplicaId)
                 .setLabel(requestLabel)
-                .setData(ByteString.copyFromUtf8(requestData))
+                .setData(ByteString.copyFrom(requestData))
                 .setTimestamp(timestamp)
                 .build();
         replicas.get(destinyReplicaId).getSecond().invoke(request, new ClientStreamObserver(blockingQueue));
@@ -236,7 +239,7 @@ public class Replica {
      * @param requestData  data to send in the operation
      * @param timestamp    timestamp of the request invocation
      */
-    private static void quorumInvoke(String requestLabel, String requestData, Timestamp timestamp) {
+    public static void quorumInvoke(String requestLabel, byte[] requestData, Timestamp timestamp) {
         for (int id = 0; id < replicas.size(); id++) {
             invoke(id, requestLabel, requestData, timestamp);
         }
@@ -294,12 +297,12 @@ public class Replica {
                         break;
                     }
 
-                    System.out.print("Replica id: \n-> ");
+                    System.out.print("common.Replica id: \n-> ");
                     int id = Integer.parseInt(scanner.nextLine());
 
                     while (id < 0 || id >= replicas.size()) {
                         System.out.println("Please provide an Id that exists");
-                        System.out.print("Replica id: \n-> ");
+                        System.out.print("common.Replica id: \n-> ");
                         id = Integer.parseInt(scanner.nextLine());
                     }
 
@@ -314,7 +317,7 @@ public class Replica {
                 }
             }
         }
-        System.out.println(" * Replica " + replicaId + " is shutting down...");
+        System.out.println(" * common.Replica " + replicaId + " is shutting down...");
         System.exit(1);
     }*/
 
@@ -326,7 +329,7 @@ public class Replica {
 
             quorumInvoke(
                     AppendEntriesEvent.LABEL,
-                    AppendEntriesRPC.appendEntriesArgsToJson(state, replicaId, new LinkedList<>()),
+                    AppendEntriesRPC.appendEntriesArgsToJson(state, replicaId, new LinkedList<>()).getBytes(),
                     rpcTimestamp
             );
 
@@ -371,7 +374,7 @@ public class Replica {
                     lastRequestTimestamp.set(rpcTimestamp);
                     quorumInvoke(
                             RequestVoteEvent.LABEL,
-                            RequestVoteRPC.requestVoteArgsToJson(state, replicaId),
+                            RequestVoteRPC.requestVoteArgsToJson(state, replicaId).getBytes(),
                             rpcTimestamp);
 
                     int time = Utils.randomizedTimer(WAIT_VOTES_INTERVAL.getFirst(), WAIT_VOTES_INTERVAL.getSecond());
@@ -412,7 +415,7 @@ public class Replica {
     public static void main(String[] args) {
         try {
             if (args.length < 2) {
-                System.out.println("Usage: java -jar Replica.jar <id(>= 0)> <configFile(absolute path)>");
+                System.out.println("Usage: java -jar common.Replica.jar <id(>= 0)> <configFile(absolute path)>");
                 System.exit(-1);
             }
             int term = 0;

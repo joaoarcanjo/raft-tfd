@@ -7,7 +7,7 @@ public class State {
     public enum ReplicaState {
         FOLLOWER, CANDIDATE, LEADER
     }
-
+    private int currentLeader;
     private int currentTerm;
     private int votedFor;
     private ReplicaState currentState;
@@ -82,6 +82,15 @@ public class State {
         if(log.isEmpty()) return -1;
         return log.getLast().getTerm();
     }
+
+    public int getCurrentLeader() {
+        return currentLeader;
+    }
+
+    public void setCurrentLeader(int currentLeader) {
+        this.currentLeader = currentLeader;
+    }
+
     public void incCommitIndex() {
         ++commitIndex;
     }

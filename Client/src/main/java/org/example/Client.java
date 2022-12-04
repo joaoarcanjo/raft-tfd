@@ -1,6 +1,7 @@
 package org.example;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.Timestamp;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import replica.Request;
@@ -11,6 +12,7 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -50,6 +52,9 @@ public class Client {
 
             System.out.println("Response arrived: " + response.getResults().toStringUtf8());
 
+            if(response.getId() == -1) {
+                return;
+            }
             if (response.getId() != current_leader) {
                 current_leader = response.getId();
                 System.out.println("Switched leader to: " + current_leader);
@@ -64,12 +69,18 @@ public class Client {
     private static Request createRequestMessage() {
         Random rand = new Random();
         int value = rand.nextInt(MAXIMUM - MINIMUM) + MINIMUM;
-        byte[] data = ByteBuffer.allocate(INT_SIZE).putInt(value).array();
+            byte[] data = ByteBuffer.allocate(INT_SIZE).putInt(value).array();
         return Request.newBuilder()
                 .setId(CLIENT_ID)
                 .setLabel(INCREASE_LABEL)
                 .setData(ByteString.copyFrom(data))
+                .setTimestamp(getInstantTimestamp())
                 .build();
+    }
+
+    private static Timestamp getInstantTimestamp() {
+        var timestamp = java.sql.Timestamp.from(Instant.now());
+        return Timestamp.newBuilder().setSeconds(timestamp.getTime()).setNanos(timestamp.getNanos()).build();
     }
 
     private static void initClient(String configFilePath) throws IOException {

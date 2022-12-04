@@ -13,17 +13,6 @@ public class StateMachine {
     }
 
     public void decodeLogElement(LogElement logElement) {
-        switch (logElement.getLabel()) {
-            case ("increaseBy"): {
-                try {
-                    increaseBy(ByteBuffer.wrap(logElement.getCommandArgs()).getInt());
-                } catch (Exception e) {
-                    System.out.println("-> Command arg must be an integer.");
-                }
-                break;
-            }
-            default:
-                System.out.println("-> Unrecognizable label.");
-        }
+
     }
 }
