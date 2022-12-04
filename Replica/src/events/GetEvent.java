@@ -3,7 +3,6 @@ package events;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import replica.Result;
-import replica.ResultList;
 
 public class GetEvent implements EventHandler {
     public static final String LABEL = "GET";
