@@ -2,20 +2,18 @@ package events;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
-import common.Replica;
 import events.models.LogElement;
 import events.models.State;
 import replica.Result;
 
-import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class ClientRequestEvent implements EventHandler {
+public class IncreaseByEvent implements EventHandler {
 
-    public static final String LABEL = "CLIENT";
+    public static final String LABEL = "increaseBy";
     public static final HashSet<String> OPERATIONS = new HashSet<>(List.of("increaseBy"));
 
     private final Condition condition;
@@ -23,7 +21,7 @@ public class ClientRequestEvent implements EventHandler {
     private final State state;
 
 
-    public ClientRequestEvent(ReentrantLock monitor, Condition condition, State state) {
+    public IncreaseByEvent(ReentrantLock monitor, Condition condition, State state) {
         this.condition = condition;
         this.monitor = monitor;
         this.state = state;
@@ -31,6 +29,9 @@ public class ClientRequestEvent implements EventHandler {
 
     @Override
     public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
+        LogElement newLogEntry = new LogElement(data.toByteArray(), LABEL, state.getCurrentTerm());
+        state.addToLog(newLogEntry);
+
         return Result.newBuilder().build(); // TODO:
     }
 

@@ -1,5 +1,6 @@
 package common;
 
+import events.IncreaseByEvent;
 import events.EventHandler;
 import events.EventLogic;
 import events.models.LogElement;
@@ -17,7 +18,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Optional;
 
-import static events.ClientRequestEvent.OPERATIONS;
+import static events.IncreaseByEvent.OPERATIONS;
 
 public class GRPCServer extends ServerGrpc.ServerImplBase {
     private static Server svc;
@@ -49,13 +50,13 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
             LogElement newLogEntry = new LogElement(request.getData().toByteArray(), request.getLabel(), state.getCurrentTerm());
 
             switch (request.getLabel()) {
-                case ("increaseBy"): {
+                case (IncreaseByEvent.LABEL): {
                     int arg = ByteBuffer.wrap(newLogEntry.getCommandArgs()).getInt();
                     if(arg < 1 || arg > 5) {
                         throw new Exception();
                     }
                     state.addToLog(newLogEntry);
-                    Replica.quorumInvoke(request.getLabel(), request.getData().toByteArray(), request.getTimestamp());
+                    Replica.quorumInvoke(IncreaseByEvent.LABEL, request.getData().toByteArray(), request.getTimestamp());
                     break;
                 }
                 default:
