@@ -12,7 +12,7 @@ public class RequestVoteRPC {
         public RequestVoteArgs(State state, int candidateId) {
             this.term = state.getCurrentTerm();
             this.candidateId = candidateId;
-            this.lastLogIndex = state.getLastLogIndex();
+            this.lastLogIndex = state.getCommitIndex();
             this.lastLogTerm = state.getLastLogTerm();
         }
     }

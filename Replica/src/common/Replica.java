@@ -3,6 +3,7 @@ package common;
 import com.google.protobuf.ByteString;
 import events.*;
 import events.models.AppendEntriesRPC;
+import events.models.LogElement;
 import events.models.RequestVoteRPC;
 import events.models.State;
 import io.grpc.ManagedChannel;
@@ -122,6 +123,10 @@ public class Replica {
 
                         if(state.getCurrentState() == State.ReplicaState.LEADER) {
                             waitingResults.set(0); //verify later, leader doesn't care about the waiting results.
+                            AppendEntriesRPC.ResultAppendEntry received = AppendEntriesRPC.resultAppendEntryFromJson(result.getResultMessage());
+                            if (received != null) {
+                                state.setNextIndex(result.getId(), received.nextIndex);
+                            }
                             continue;
                         }
 
@@ -176,7 +181,7 @@ public class Replica {
         waitingResults = new AtomicInteger(0);
         lastRequestTimestamp = new AtomicReference<>(null);
         resultsThread = initResultsThread();
-        state = new State(term);
+        state = new State(term, replicaId);
         //state = new State();
         eventLogic = new EventLogic(monitor, condition, state);
         serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic, state);
@@ -242,6 +247,14 @@ public class Replica {
     public static void quorumInvoke(String requestLabel, byte[] requestData, Timestamp timestamp) {
         for (int id = 0; id < replicas.size(); id++) {
             invoke(id, requestLabel, requestData, timestamp);
+        }
+    }
+
+    public static void quorumInvoke(String requestLabel, LogElement.LogElementArgs newLogEntry, Timestamp timestamp) {
+        for (int id = 0; id < replicas.size(); id++) {
+            LinkedList<LogElement.LogElementArgs> entries = new LinkedList<>(state.getEntries(id));
+            entries.add(newLogEntry);
+            invoke(id, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries).getBytes(), timestamp);
         }
     }
 
@@ -329,7 +342,7 @@ public class Replica {
 
             quorumInvoke(
                     AppendEntriesEvent.LABEL,
-                    AppendEntriesRPC.appendEntriesArgsToJson(state, replicaId, new LinkedList<>()).getBytes(),
+                    AppendEntriesRPC.appendEntriesArgsToJson(state, new LinkedList<>()).getBytes(),
                     rpcTimestamp
             );
 
@@ -351,10 +364,10 @@ public class Replica {
                             WAIT_HEARTBEAT_INTERVAL.getFirst(),
                             WAIT_HEARTBEAT_INTERVAL.getSecond()
                     );
-                    System.out.println(
+                    /*System.out.println(
                             "--- Waiting " + time + " seconds for a heartbeat. " +
                             "Term: " + state.getCurrentTerm() + " ---"
-                    );
+                    );*/
                     notified = condition.await(time, TimeUnit.SECONDS);
                     if (!notified) {
                         System.out.println("* Heartbeat timeout *");
@@ -386,6 +399,7 @@ public class Replica {
                         state.InitLeaderState(replicas.size());
                         System.out.println("\n-> Switched to LEADER. Term: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.LEADER);
+                        state.setCurrentLeader(replicaId);
                         System.out.println("* Start sending heartbeats *");
                         heartbeat();
                         System.out.println("! Leader role lost, switching to follower !");
@@ -422,7 +436,7 @@ public class Replica {
             if(args.length > 2)
                 term = Integer.parseInt(args[2]);
             System.out.println("Start Term: " + term);
-
+            args[0] = auxToDelete();
             initReplica(Integer.parseInt(args[0]), args[1], term);
             //initReplica(Integer.parseInt(args[0]), args[1]);
             System.out.println(" * REPLICA ID: " + replicaId + " *");
@@ -431,5 +445,11 @@ public class Replica {
         } catch (IOException | InterruptedException e) {
             System.out.println("* ERROR * " + e);
         }
+    }
+
+    //apenas para poder criar varias instancias sem ter que estar a alterar o argument 0.
+    public static String auxToDelete() {
+        Scanner scanner = new Scanner(System.in);
+        return scanner.nextLine();
     }
 }

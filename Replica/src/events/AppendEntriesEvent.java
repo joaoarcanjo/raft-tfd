@@ -25,7 +25,7 @@ public class AppendEntriesEvent implements EventHandler {
     public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
         monitor.lock();
         try {
-            AppendEntriesRPC.AppendEntriesArgs received = AppendEntriesRPC.appendEntriesArgsFromJson(data.toString());
+            AppendEntriesRPC.AppendEntriesArgs received = AppendEntriesRPC.appendEntriesArgsFromJson(data.toStringUtf8());
 
             if (received.term >= state.getCurrentTerm()) {
                 state.setCurrentTerm(received.term);
@@ -37,6 +37,31 @@ public class AppendEntriesEvent implements EventHandler {
                     }
                     System.out.println("* Heartbeat received from " + received.leaderId + " *");
                     condition.signal();
+                } else {
+
+                    //fazer commit do prevLogIndex? Se o prevLogIndex for superior ao commitIndex
+                    //eu quero todas as entries desde o prevLogIndex + 1 até à ultima entry do lider.
+                    System.out.println("LOG: prevLogIndex: "+ received.prevLogIndex);
+                    System.out.println("LOG: commitIndex: "+ state.getCommitIndex());
+                    if (received.prevLogIndex > state.getCommitIndex()) {
+                        state.deleteUncommittedLogs();
+                    }
+                    if (received.prevLogIndex == state.getCommitIndex()) {
+                        state.updateStateMachine();
+                        state.incCommitIndex();
+                        System.out.println("Received entries: " + received.entries);
+                        state.addToLog(received.entries.get(0));
+                    }
+
+                    //Will return to the leader, the last commit index.
+                    return Result.newBuilder()
+                            .setId(senderId)
+                            .setResultMessage(
+                                    AppendEntriesRPC.resultAppendEntryToJson(
+                                            state.getCurrentTerm(),
+                                            state.getCommitIndex()
+                                    ))
+                            .build();
                 }
                 // Notify the condition because receives a heartbeat
                 // Notify leader so that the while breaks, also, if its follower, reset loop
@@ -49,5 +74,6 @@ public class AppendEntriesEvent implements EventHandler {
 
     @Override
     public void processSelfRequest(String label, String data) {
+
     }
 }

@@ -22,7 +22,7 @@ public class Client {
     private static final int MAXIMUM = 6;
     private static final int INT_SIZE = 4;
     public static final int CLIENT_ID = -1;
-    public static final int WAITING_TIME = 5000;
+    public static final int WAITING_TIME = 10000;
     private static final String INCREASE_LABEL = "increaseBy";
 
     private static int current_leader = 1;
@@ -47,7 +47,7 @@ public class Client {
     private static void sendCommands() throws InterruptedException {
         Request request = createRequestMessage();
         while (true) {
-
+            System.out.println("Send command:");
             Result response = replicas.get(current_leader).getSecond().request(request);
 
             System.out.println("Response arrived: " + response.getResults().toStringUtf8());
@@ -59,16 +59,18 @@ public class Client {
                 current_leader = response.getId();
                 System.out.println("Switched leader to: " + current_leader);
             } else {
-                request = createRequestMessage();
                 Thread.sleep(WAITING_TIME);
+                request = createRequestMessage();
             }
 
         }
     }
 
     private static Request createRequestMessage() {
+        System.out.println("Create request message called");
         Random rand = new Random();
         int value = rand.nextInt(MAXIMUM - MINIMUM) + MINIMUM;
+        System.out.println("Random generated:"+ value);
             byte[] data = ByteBuffer.allocate(INT_SIZE).putInt(value).array();
         return Request.newBuilder()
                 .setId(CLIENT_ID)

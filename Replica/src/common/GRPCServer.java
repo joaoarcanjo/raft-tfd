@@ -1,8 +1,10 @@
 package common;
 
+import events.AppendEntriesEvent;
 import events.IncreaseByEvent;
 import events.EventHandler;
 import events.EventLogic;
+import events.models.AppendEntriesRPC;
 import events.models.LogElement;
 import events.models.State;
 import io.grpc.Server;
@@ -34,6 +36,7 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
 
     @Override
     public void request(Request request, StreamObserver<Result> responseObserver) {
+        System.out.println("---> REQUEST BY CLIENT RECEIVED");
 
         try {
 
@@ -46,22 +49,32 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
             if (!OPERATIONS.contains(request.getLabel())) {
                 throw new Exception();
             }
-
-            LogElement newLogEntry = new LogElement(request.getData().toByteArray(), request.getLabel(), state.getCurrentTerm());
+            LogElement.LogElementArgs newLogEntry = new LogElement.LogElementArgs(
+                    request.getData().toByteArray(),
+                    request.getLabel(),
+                    state.getCurrentTerm()
+            );
 
             switch (request.getLabel()) {
                 case (IncreaseByEvent.LABEL): {
                     int arg = ByteBuffer.wrap(newLogEntry.getCommandArgs()).getInt();
+                    System.out.println("arg ----> " + arg);
                     if(arg < 1 || arg > 5) {
                         throw new Exception();
                     }
+                    state.updateStateMachine();
                     state.addToLog(newLogEntry);
-                    Replica.quorumInvoke(IncreaseByEvent.LABEL, request.getData().toByteArray(), request.getTimestamp());
+                    Replica.quorumInvoke(AppendEntriesEvent.LABEL, newLogEntry, request.getTimestamp());
+                    state.incCommitIndex();
                     break;
                 }
                 default:
                     System.out.println("-> Unrecognizable label.");
             }
+            System.out.println("Send response to the client");
+            //TODO: PENSAR MELHOR NO QUE É QUE SE VAI DEVOLVER AO CLIENTE
+            responseObserver.onNext(Result.newBuilder().setId(state.getCurrentLeader()).build());
+            responseObserver.onCompleted();
 
             // enviar add to log
             // incrementar a coisa
@@ -71,8 +84,6 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
             Throwable th = new StatusException(Status.ABORTED.withDescription("There was a problem"));
             responseObserver.onError(th);
         }
-
-
     }
 
     @Override
@@ -83,8 +94,12 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
             responseObserver.onError(new StatusException(Status.INVALID_ARGUMENT.withDescription(message)));
             return;
         }
-
-        responseObserver.onNext(handler.get().processRequest(request.getId(), request.getLabel(), request.getData(), request.getTimestamp()));
+        responseObserver.onNext(handler.get().processRequest(
+                request.getId(),
+                request.getLabel(),
+                request.getData(),
+                request.getTimestamp())
+        );
         responseObserver.onCompleted();
     }
 

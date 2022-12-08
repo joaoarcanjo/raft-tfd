@@ -29,8 +29,8 @@ public class IncreaseByEvent implements EventHandler {
 
     @Override
     public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
-        LogElement newLogEntry = new LogElement(data.toByteArray(), LABEL, state.getCurrentTerm());
-        state.addToLog(newLogEntry);
+        //LogElement newLogEntry = new LogElement(data.toByteArray(), LABEL, state.getCurrentTerm());
+        //state.addToLog(newLogEntry);
 
         return Result.newBuilder().build(); // TODO:
     }

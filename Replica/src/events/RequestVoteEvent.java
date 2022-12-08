@@ -23,7 +23,8 @@ public class RequestVoteEvent implements EventHandler {
 
     @Override
     public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
-        RequestVoteRPC.RequestVoteArgs requestVoteArgs = RequestVoteRPC.requestVoteArgsFromJson(data.toString());
+        System.out.println(data.toStringUtf8());
+        RequestVoteRPC.RequestVoteArgs requestVoteArgs = RequestVoteRPC.requestVoteArgsFromJson(data.toStringUtf8());
 
         boolean vote = false; // Starts at false, because it will only turn true if there's a term superior to ours
 
