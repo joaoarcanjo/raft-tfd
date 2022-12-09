@@ -20,15 +20,20 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.sql.Time;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+
+import static events.models.RequestVoteRPC.verifyResultVoteSyntax;
 
 public class Replica {
     /**
@@ -40,12 +45,12 @@ public class Replica {
     private static EventLogic eventLogic;
     private static Condition condition;
     private static ReentrantLock monitor;
-
     public static final BlockingQueue<Result> blockingQueue = new LinkedBlockingQueue<>();
-
     private static boolean terminate = false;
     private static AtomicInteger waitingResults;
-    private static AtomicReference<Timestamp> lastRequestTimestamp;
+    private static AtomicReference<Timestamp> lastRequestTimestamp; //timestamp do vote.
+    //Quorum invoke flag.
+    private static AtomicBoolean entriesSent;
     /**
      * Identifier of the current replica
      */
@@ -55,9 +60,9 @@ public class Replica {
     /**
      * Leader election intervals
      */
-    private static final Pair<Integer, Integer> SEND_HEARTBEAT_INTERVAL = new Pair<>(5, 10);
-    private static final Pair<Integer, Integer> WAIT_VOTES_INTERVAL = new Pair<>(10, 15);
-    private static final Pair<Integer, Integer> WAIT_HEARTBEAT_INTERVAL = new Pair<>(10, 15);
+    private static final Pair<Integer, Integer> SEND_HEARTBEAT_INTERVAL = new Pair<>(5, 9);
+    private static final Pair<Integer, Integer> WAIT_VOTES_INTERVAL = new Pair<>(11, 15);
+    private static final Pair<Integer, Integer> WAIT_HEARTBEAT_INTERVAL = new Pair<>(11, 15);
 
     /**
      * Initializes the client communication channel
@@ -88,7 +93,11 @@ public class Replica {
             }
         }
     }
-
+    //TODO
+    //-> Uma entry só é committed quando for replicada na maioria dos logs
+    //-> Quando uma entry é committed, todas as restantes entries do log do lider sao committed.
+    //-> O lider sabe qual o maior index q tem q dar committed, inclui esse index em todos os appendEntries,
+    //-> Incluindo os heartbeats.
     /**
      * Initializes the thread responsible for waiting for the results to arrive and then processes the results obtained
      *
@@ -103,9 +112,8 @@ public class Replica {
                 while (!terminate) {
                     try {
                         monitor.unlock();
-                        result = blockingQueue.take();
+                        result = blockingQueue.take(); //resposta do voto. //resposta do appendEntries
                         monitor.lock();
-
                         if (state.getCurrentState() == State.ReplicaState.CANDIDATE) {
                             RequestVoteRPC.ResultVote received = RequestVoteRPC.resultVoteFromJson(result.getResultMessage());
                             if (state.getCurrentTerm() < received.term) {
@@ -122,11 +130,8 @@ public class Replica {
                         }
 
                         if(state.getCurrentState() == State.ReplicaState.LEADER) {
-                            waitingResults.set(0); //verify later, leader doesn't care about the waiting results.
-                            AppendEntriesRPC.ResultAppendEntry received = AppendEntriesRPC.resultAppendEntryFromJson(result.getResultMessage());
-                            if (received != null) {
-                                state.setNextIndex(result.getId(), received.nextIndex);
-                            }
+                            //waitingResults.set(0);
+                            appendEntryResponse(result);
                             continue;
                         }
 
@@ -163,6 +168,22 @@ public class Replica {
         });
         resultsThread.start();
         return resultsThread;
+    }
+
+    private static void appendEntryResponse(Result result) {
+
+        AppendEntriesRPC.ResultAppendEntry received =
+                AppendEntriesRPC.resultAppendEntryFromJson(result.getResultMessage());
+        System.out.println("Received: " + received);
+
+        if (received != null) {
+            System.out.println("RESULT ARRIVED.");
+            /*System.out.println("_________________________________");
+            System.out.println("LOG: Reply received by : "+ result.getId());
+            System.out.println("---> NextIndex: "+received.nextIndex);
+            System.out.println("_________________________________");
+            state.setNextIndex(result.getId(), received.nextIndex);*/
+        }
     }
 
     /**
@@ -256,96 +277,25 @@ public class Replica {
             entries.add(newLogEntry);
             invoke(id, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries).getBytes(), timestamp);
         }
+        entriesSent.set(true);
     }
-
-    /**
-     * Cancels the wait for results from a previous operation request
-     *
-     * @param scanner scanner to read from the standard input
-     */
-    /*
-    private static void cancelOperation(Scanner scanner) {
-        System.out.println("Do you want to cancel the previous operation? [y/n]");
-        System.out.print("-> ");
-        String response = scanner.nextLine();
-        if (response.length() > 0 && response.compareTo("y") != 0) return;
-        resetRequestTimestamp();
-        waitingResults.set(0);
-    }*/
-
-    /**
-     * Menu with all the possible operations to test the system
-     */
-    /*
-    private static void operations() {
-        Scanner scanner = new Scanner(System.in);
-        String options = "Choose an operation: \n" +
-                " [0] ADD string to all replicas\n" +
-                " [1] GET set of strings from a replica\n" +
-                " [2] Exit";
-        while (!terminate) {
-            System.out.println(options);
-            System.out.print("-> ");
-
-            switch (scanner.nextLine()) {
-                case "0": {
-                    // TODO: Se forem 5 réplicas, esperamos por 3 respostas ou 2 (se a replica atual não contar)?
-                    if (!waitingResults.compareAndSet(0, Math.round(replicas.size() / 2f))) { // k > n/2 - 1
-                        System.out.println(" * Still waiting for the majority of results...");
-                        cancelOperation(scanner);
-                        break;
-                    }
-                    System.out.print("Insert the data: \n-> ");
-                    String data = scanner.nextLine();
-
-                    Timestamp rpcTimestamp = getInstantTimestamp();
-                    lastRequestTimestamp.set(rpcTimestamp);
-                    quorumInvoke(AddEvent.LABEL, data, rpcTimestamp);
-                    break;
-                }
-                case "1": {
-                    if (!waitingResults.compareAndSet(0, 1)) {
-                        System.out.println(" * Still waiting for the result...");
-                        cancelOperation(scanner);
-                        break;
-                    }
-
-                    System.out.print("common.Replica id: \n-> ");
-                    int id = Integer.parseInt(scanner.nextLine());
-
-                    while (id < 0 || id >= replicas.size()) {
-                        System.out.println("Please provide an Id that exists");
-                        System.out.print("common.Replica id: \n-> ");
-                        id = Integer.parseInt(scanner.nextLine());
-                    }
-
-                    Timestamp rpcTimestamp = getInstantTimestamp();
-                    lastRequestTimestamp.set(rpcTimestamp);
-                    invoke(id, GetEvent.LABEL, "", rpcTimestamp);
-                    break;
-                }
-                case "2": {
-                    terminate = true;
-                    break;
-                }
-            }
-        }
-        System.out.println(" * common.Replica " + replicaId + " is shutting down...");
-        System.exit(1);
-    }*/
 
     private static void heartbeat() throws InterruptedException {
         do {
-            System.out.println("* Heartbeats sent *");
-            Timestamp rpcTimestamp = getInstantTimestamp();
-            lastRequestTimestamp.set(rpcTimestamp);
+            if(entriesSent.get()) {
+                System.out.println("Entrei!!");
+                entriesSent.set(false);
+            } else {
+                System.out.println("* Heartbeats sent *");
+                Timestamp rpcTimestamp = getInstantTimestamp();
+                lastRequestTimestamp.set(rpcTimestamp);
 
-            quorumInvoke(
-                    AppendEntriesEvent.LABEL,
-                    AppendEntriesRPC.appendEntriesArgsToJson(state, new LinkedList<>()).getBytes(),
-                    rpcTimestamp
-            );
-
+                quorumInvoke(
+                        AppendEntriesEvent.LABEL,
+                        AppendEntriesRPC.appendEntriesArgsToJson(state, new LinkedList<>()).getBytes(),
+                        rpcTimestamp
+                );
+            }
         } while(!condition.await(Utils.randomizedTimer(
                         SEND_HEARTBEAT_INTERVAL.getFirst(),
                         SEND_HEARTBEAT_INTERVAL.getSecond()),
@@ -364,11 +314,12 @@ public class Replica {
                             WAIT_HEARTBEAT_INTERVAL.getFirst(),
                             WAIT_HEARTBEAT_INTERVAL.getSecond()
                     );
-                    /*System.out.println(
+                    System.out.println(
                             "--- Waiting " + time + " seconds for a heartbeat. " +
                             "Term: " + state.getCurrentTerm() + " ---"
-                    );*/
+                    );
                     notified = condition.await(time, TimeUnit.SECONDS);
+                    System.out.println("Notificado: " +  notified);
                     if (!notified) {
                         System.out.println("* Heartbeat timeout *");
                         //System.out.println("-> Switched to candidate\n");
@@ -400,6 +351,7 @@ public class Replica {
                         System.out.println("\n-> Switched to LEADER. Term: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.LEADER);
                         state.setCurrentLeader(replicaId);
+                        entriesSent = new AtomicBoolean();
                         System.out.println("* Start sending heartbeats *");
                         heartbeat();
                         System.out.println("! Leader role lost, switching to follower !");

@@ -22,7 +22,7 @@ public class State {
     private int lastLogTerm;
     private final String logFile;
 
-    //The next index present to be committed. Basically is the lastApplied + 1.
+    //The next index present to be committed.
     private int commitIndex;
     //Number of entries present in the file plus the number of committed entries present in the list
     private int lastApplied;
@@ -124,8 +124,9 @@ public class State {
     }
 
     /**
-     * This function will affect the last entry os logs to the state machine
+     * This function will affect the last entry of logs to the state machine
      */
+    //TODO: qual é o index que tenho q fazer commit?
     public void updateStateMachine() {
         if(commitIndex == -1) return; //if it doesn't exist any entry to commit
         incLastApplied();

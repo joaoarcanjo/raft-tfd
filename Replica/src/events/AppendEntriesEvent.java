@@ -29,7 +29,6 @@ public class AppendEntriesEvent implements EventHandler {
 
             if (received.term >= state.getCurrentTerm()) {
                 state.setCurrentTerm(received.term);
-
                 //If it is a heartbeat.
                 if (received.entries.isEmpty()) {
                     if (received.leaderId != state.getCurrentLeader()) {
@@ -38,22 +37,34 @@ public class AppendEntriesEvent implements EventHandler {
                     System.out.println("* Heartbeat received from " + received.leaderId + " *");
                     condition.signal();
                 } else {
-
+                    System.out.println("* Entries received from " + received.leaderId + " *");
+                    condition.signal();
                     //fazer commit do prevLogIndex? Se o prevLogIndex for superior ao commitIndex
                     //eu quero todas as entries desde o prevLogIndex + 1 até à ultima entry do lider.
                     System.out.println("LOG: prevLogIndex: "+ received.prevLogIndex);
                     System.out.println("LOG: commitIndex: "+ state.getCommitIndex());
                     if (received.prevLogIndex > state.getCommitIndex()) {
-                        state.deleteUncommittedLogs();
+                        if(received.term > state.getCurrentTerm()) {
+                            //Os uncommitedLogs foram enviados por um outro lider.
+                            //Vamos apagar os logs que não estao committed e pedir ao novo lider
+                            //os que me faltam.
+                            state.deleteUncommittedLogs();
+                        } else {
+                            //O lider diz que pode dar committed do 4, mas ao follower ainda falta dar committed ao 2.
+                            //Eu vou
+                            // LIDER -> 1 3 4 2 4
+                            // FLLOW -> 1 3 4 2
+                        }
+                        //
                     }
                     if (received.prevLogIndex == state.getCommitIndex()) {
                         state.updateStateMachine();
                         state.incCommitIndex();
-                        System.out.println("Received entries: " + received.entries);
                         state.addToLog(received.entries.get(0));
                     }
 
                     //Will return to the leader, the last commit index.
+                    System.out.println("RETURN TO THE LEADER!!");
                     return Result.newBuilder()
                             .setId(senderId)
                             .setResultMessage(
@@ -61,6 +72,7 @@ public class AppendEntriesEvent implements EventHandler {
                                             state.getCurrentTerm(),
                                             state.getCommitIndex()
                                     ))
+                            .set
                             .build();
                 }
                 // Notify the condition because receives a heartbeat

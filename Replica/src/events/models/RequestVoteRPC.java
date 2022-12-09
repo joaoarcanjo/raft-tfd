@@ -1,6 +1,7 @@
 package events.models;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
 
 public class RequestVoteRPC {
     public static class RequestVoteArgs {
@@ -65,6 +66,14 @@ public class RequestVoteRPC {
         return new Gson().toJson(new ResultVote(term, vote));
     }
 
+    public static boolean verifyResultVoteSyntax(String json) {
+        try {
+            new Gson().fromJson(json, ResultVote.class);
+            return true;
+        } catch (JsonSyntaxException e) {
+            return false;
+        }
+    }
 }
 
 

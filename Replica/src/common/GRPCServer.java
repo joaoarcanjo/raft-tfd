@@ -62,10 +62,10 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
                     if(arg < 1 || arg > 5) {
                         throw new Exception();
                     }
-                    state.updateStateMachine();
+                    //state.updateStateMachine();
                     state.addToLog(newLogEntry);
                     Replica.quorumInvoke(AppendEntriesEvent.LABEL, newLogEntry, request.getTimestamp());
-                    state.incCommitIndex();
+                    //state.incCommitIndex();
                     break;
                 }
                 default:
