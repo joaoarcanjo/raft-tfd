@@ -14,7 +14,7 @@ public class ClientStreamObserver implements StreamObserver<Result> {
 
     @Override
     public void onNext(Result result) {
-        if(result == null) return; //Heartbeat response.
+        System.out.println("Result: " + result.getResultMessage());
         blockingQueue.add(result);
     }
 

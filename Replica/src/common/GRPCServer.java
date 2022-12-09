@@ -18,6 +18,7 @@ import replica.ServerGrpc;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.LinkedList;
 import java.util.Optional;
 
 import static events.IncreaseByEvent.OPERATIONS;
@@ -49,28 +50,7 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
             if (!OPERATIONS.contains(request.getLabel())) {
                 throw new Exception();
             }
-            LogElement.LogElementArgs newLogEntry = new LogElement.LogElementArgs(
-                    request.getData().toByteArray(),
-                    request.getLabel(),
-                    state.getCurrentTerm()
-            );
-
-            switch (request.getLabel()) {
-                case (IncreaseByEvent.LABEL): {
-                    int arg = ByteBuffer.wrap(newLogEntry.getCommandArgs()).getInt();
-                    System.out.println("arg ----> " + arg);
-                    if(arg < 1 || arg > 5) {
-                        throw new Exception();
-                    }
-                    //state.updateStateMachine();
-                    state.addToLog(newLogEntry);
-                    Replica.quorumInvoke(AppendEntriesEvent.LABEL, newLogEntry, request.getTimestamp());
-                    //state.incCommitIndex();
-                    break;
-                }
-                default:
-                    System.out.println("-> Unrecognizable label.");
-            }
+            Replica.blockingQueueClient.add(request);
             System.out.println("Send response to the client");
             //TODO: PENSAR MELHOR NO QUE É QUE SE VAI DEVOLVER AO CLIENTE
             responseObserver.onNext(Result.newBuilder().setId(state.getCurrentLeader()).build());

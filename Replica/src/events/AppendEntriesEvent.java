@@ -23,6 +23,7 @@ public class AppendEntriesEvent implements EventHandler {
 
     @Override
     public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
+        Result result = null;
         monitor.lock();
         try {
             AppendEntriesRPC.AppendEntriesArgs received = AppendEntriesRPC.appendEntriesArgsFromJson(data.toStringUtf8());
@@ -37,13 +38,13 @@ public class AppendEntriesEvent implements EventHandler {
                     System.out.println("* Heartbeat received from " + received.leaderId + " *");
                     condition.signal();
                 } else {
+                    System.out.println("Received: " + received.entries.getLast().getCommandArgs());
                     System.out.println("* Entries received from " + received.leaderId + " *");
-                    condition.signal();
                     //fazer commit do prevLogIndex? Se o prevLogIndex for superior ao commitIndex
                     //eu quero todas as entries desde o prevLogIndex + 1 até à ultima entry do lider.
                     System.out.println("LOG: prevLogIndex: "+ received.prevLogIndex);
                     System.out.println("LOG: commitIndex: "+ state.getCommitIndex());
-                    if (received.prevLogIndex > state.getCommitIndex()) {
+                    /*if (received.prevLogIndex > state.getCommitIndex()) {
                         if(received.term > state.getCurrentTerm()) {
                             //Os uncommitedLogs foram enviados por um outro lider.
                             //Vamos apagar os logs que não estao committed e pedir ao novo lider
@@ -61,24 +62,25 @@ public class AppendEntriesEvent implements EventHandler {
                         state.updateStateMachine();
                         state.incCommitIndex();
                         state.addToLog(received.entries.get(0));
-                    }
+                    }*/
 
                     //Will return to the leader, the last commit index.
-                    System.out.println("RETURN TO THE LEADER!!");
-                    return Result.newBuilder()
+                    result = Result.newBuilder()
                             .setId(senderId)
                             .setResultMessage(
                                     AppendEntriesRPC.resultAppendEntryToJson(
                                             state.getCurrentTerm(),
                                             state.getCommitIndex()
                                     ))
-                            .set
                             .build();
+                    System.out.println("Result sent: " + result.getResultMessage());
+                    condition.signal();
                 }
                 // Notify the condition because receives a heartbeat
                 // Notify leader so that the while breaks, also, if its follower, reset loop
             }
-            return null;
+            System.out.println("RETURN TO THE LEADER!!");
+            return result;
         } finally {
             monitor.unlock();
         }

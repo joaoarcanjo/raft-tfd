@@ -20,9 +20,7 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.sql.Time;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -33,8 +31,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-import static events.models.RequestVoteRPC.verifyResultVoteSyntax;
-
 public class Replica {
     /**
      * Each position of the list correspond to an id of a replica, which contains its socket address
@@ -42,10 +38,12 @@ public class Replica {
     private static final List<Pair<ReplicaAddress, ServerGrpc.ServerStub>> replicas = new ArrayList<>();
     private static Thread serverThread;
     private static Thread resultsThread;
+    private static Thread requestsThread;
     private static EventLogic eventLogic;
     private static Condition condition;
     private static ReentrantLock monitor;
     public static final BlockingQueue<Result> blockingQueue = new LinkedBlockingQueue<>();
+    public static final BlockingQueue<Request> blockingQueueClient = new LinkedBlockingQueue<>();
     private static boolean terminate = false;
     private static AtomicInteger waitingResults;
     private static AtomicReference<Timestamp> lastRequestTimestamp; //timestamp do vote.
@@ -60,9 +58,9 @@ public class Replica {
     /**
      * Leader election intervals
      */
-    private static final Pair<Integer, Integer> SEND_HEARTBEAT_INTERVAL = new Pair<>(5, 9);
-    private static final Pair<Integer, Integer> WAIT_VOTES_INTERVAL = new Pair<>(11, 15);
-    private static final Pair<Integer, Integer> WAIT_HEARTBEAT_INTERVAL = new Pair<>(11, 15);
+    private static final Pair<Integer, Integer> SEND_HEARTBEAT_INTERVAL = new Pair<>(5, 7);
+    private static final Pair<Integer, Integer> WAIT_VOTES_INTERVAL = new Pair<>(13, 15);
+    private static final Pair<Integer, Integer> WAIT_HEARTBEAT_INTERVAL = new Pair<>(13, 15);
 
     /**
      * Initializes the client communication channel
@@ -170,14 +168,55 @@ public class Replica {
         return resultsThread;
     }
 
+    private static Thread readClientRequests() {
+        Thread resultsThread = new Thread(() -> {
+                try {
+                    while (!terminate) {
+                    Request request = blockingQueueClient.take();
+
+                    LogElement.LogElementArgs newLogEntry = new LogElement.LogElementArgs(
+                            request.getData().toByteArray(),
+                            request.getLabel(),
+                            state.getCurrentTerm()
+                    );
+
+                    switch (request.getLabel()) {
+                        case (IncreaseByEvent.LABEL): {
+                            int arg = ByteBuffer.wrap(newLogEntry.getCommandArgs()).getInt();
+                            System.out.println("arg ----> " + arg);
+                            if(arg < 1 || arg > 5) {
+                                throw new Exception();
+                            }
+                            //state.updateStateMachine();
+                            state.addToLog(newLogEntry);
+                            //Replica.quorumInvoke(AppendEntriesEvent.LABEL, newLogEntry, request.getTimestamp());
+                            System.out.println("QUORUM INVOKE");
+                            quorumInvoke(AppendEntriesEvent.LABEL, newLogEntry, request.getTimestamp());
+                            //state.incCommitIndex();
+                            break;
+                        }
+                        default:
+                            System.out.println("-> Unrecognizable label.");
+                    }
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+        });
+        resultsThread.start();
+        return resultsThread;
+    }
+
+
     private static void appendEntryResponse(Result result) {
 
         AppendEntriesRPC.ResultAppendEntry received =
                 AppendEntriesRPC.resultAppendEntryFromJson(result.getResultMessage());
-        System.out.println("Received: " + received);
+        //System.out.println("Received: " + received);
 
         if (received != null) {
-            System.out.println("RESULT ARRIVED.");
+            //System.out.println("RESULT ARRIVED.");
             /*System.out.println("_________________________________");
             System.out.println("LOG: Reply received by : "+ result.getId());
             System.out.println("---> NextIndex: "+received.nextIndex);
@@ -206,7 +245,8 @@ public class Replica {
         //state = new State();
         eventLogic = new EventLogic(monitor, condition, state);
         serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic, state);
-
+        requestsThread = readClientRequests();
+        entriesSent = new AtomicBoolean();
     }
 
     /**
@@ -272,11 +312,28 @@ public class Replica {
     }
 
     public static void quorumInvoke(String requestLabel, LogElement.LogElementArgs newLogEntry, Timestamp timestamp) {
+        LinkedList<LogElement.LogElementArgs> entries0 = new LinkedList<>(state.getEntries(0));
+        entries0.add(newLogEntry);
+        LinkedList<LogElement.LogElementArgs> entries1 = new LinkedList<>(state.getEntries(1));
+        entries1.add(newLogEntry);
+        LinkedList<LogElement.LogElementArgs> entries2 = new LinkedList<>(state.getEntries(2));
+        entries2.add(newLogEntry);
+        LinkedList<LogElement.LogElementArgs> entries3 = new LinkedList<>(state.getEntries(3));
+        entries3.add(newLogEntry);
+        LinkedList<LogElement.LogElementArgs> entries4 = new LinkedList<>(state.getEntries(4));
+        entries4.add(newLogEntry);
+
+        invoke(0, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries0).getBytes(), timestamp);
+        invoke(1, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries1).getBytes(), timestamp);
+        invoke(2, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries2).getBytes(), timestamp);
+        invoke(3, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries3).getBytes(), timestamp);
+        invoke(4, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries4).getBytes(), timestamp);
+        /*
         for (int id = 0; id < replicas.size(); id++) {
             LinkedList<LogElement.LogElementArgs> entries = new LinkedList<>(state.getEntries(id));
             entries.add(newLogEntry);
             invoke(id, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries).getBytes(), timestamp);
-        }
+        }*/
         entriesSent.set(true);
     }
 
@@ -351,7 +408,6 @@ public class Replica {
                         System.out.println("\n-> Switched to LEADER. Term: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.LEADER);
                         state.setCurrentLeader(replicaId);
-                        entriesSent = new AtomicBoolean();
                         System.out.println("* Start sending heartbeats *");
                         heartbeat();
                         System.out.println("! Leader role lost, switching to follower !");
