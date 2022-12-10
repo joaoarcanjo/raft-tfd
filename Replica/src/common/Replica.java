@@ -91,11 +91,6 @@ public class Replica {
             }
         }
     }
-    //TODO
-    //-> Uma entry só é committed quando for replicada na maioria dos logs
-    //-> Quando uma entry é committed, todas as restantes entries do log do lider sao committed.
-    //-> O lider sabe qual o maior index q tem q dar committed, inclui esse index em todos os appendEntries,
-    //-> Incluindo os heartbeats.
     /**
      * Initializes the thread responsible for waiting for the results to arrive and then processes the results obtained
      *
@@ -139,7 +134,7 @@ public class Replica {
                             throw new IllegalStateException("Some concurrent problem is happening...");
                         }
                         if (observedValue > 0) {
-                            System.out.println("+ ResultMessage from " + result.getId() + ": " + result.getResultMessage());
+                            //System.out.println("+ ResultMessage from " + result.getId() + ": " + result.getResultMessage());
                             continue;
                         }
                         if(state.getCurrentState() == State.ReplicaState.CANDIDATE && observedValue == 0) {
@@ -170,8 +165,8 @@ public class Replica {
 
     private static Thread readClientRequests() {
         Thread resultsThread = new Thread(() -> {
-                try {
-                    while (!terminate) {
+            try {
+                while (!terminate) {
                     Request request = blockingQueueClient.take();
 
                     LogElement.LogElementArgs newLogEntry = new LogElement.LogElementArgs(
@@ -187,12 +182,9 @@ public class Replica {
                             if(arg < 1 || arg > 5) {
                                 throw new Exception();
                             }
-                            //state.updateStateMachine();
                             state.addToLog(newLogEntry);
-                            //Replica.quorumInvoke(AppendEntriesEvent.LABEL, newLogEntry, request.getTimestamp());
-                            System.out.println("QUORUM INVOKE");
+                            state.incNextIndex(replicaId);
                             quorumInvoke(AppendEntriesEvent.LABEL, newLogEntry, request.getTimestamp());
-                            //state.incCommitIndex();
                             break;
                         }
                         default:
@@ -213,15 +205,15 @@ public class Replica {
 
         AppendEntriesRPC.ResultAppendEntry received =
                 AppendEntriesRPC.resultAppendEntryFromJson(result.getResultMessage());
-        //System.out.println("Received: " + received);
 
-        if (received != null) {
-            //System.out.println("RESULT ARRIVED.");
-            /*System.out.println("_________________________________");
+        if (received != null && result.getLabel().equals("entriesResponse")) {
+            System.out.println("RESULT ARRIVED.");
+            System.out.println("_________________________________");
             System.out.println("LOG: Reply received by : "+ result.getId());
             System.out.println("---> NextIndex: "+received.nextIndex);
             System.out.println("_________________________________");
-            state.setNextIndex(result.getId(), received.nextIndex);*/
+            state.setNextIndex(result.getId(), received.nextIndex);
+            state.updateCommitIndexLeader();
         }
     }
 
@@ -312,35 +304,30 @@ public class Replica {
     }
 
     public static void quorumInvoke(String requestLabel, LogElement.LogElementArgs newLogEntry, Timestamp timestamp) {
-        LinkedList<LogElement.LogElementArgs> entries0 = new LinkedList<>(state.getEntries(0));
-        entries0.add(newLogEntry);
-        LinkedList<LogElement.LogElementArgs> entries1 = new LinkedList<>(state.getEntries(1));
-        entries1.add(newLogEntry);
-        LinkedList<LogElement.LogElementArgs> entries2 = new LinkedList<>(state.getEntries(2));
-        entries2.add(newLogEntry);
-        LinkedList<LogElement.LogElementArgs> entries3 = new LinkedList<>(state.getEntries(3));
-        entries3.add(newLogEntry);
-        LinkedList<LogElement.LogElementArgs> entries4 = new LinkedList<>(state.getEntries(4));
-        entries4.add(newLogEntry);
-
-        invoke(0, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries0).getBytes(), timestamp);
-        invoke(1, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries1).getBytes(), timestamp);
-        invoke(2, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries2).getBytes(), timestamp);
-        invoke(3, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries3).getBytes(), timestamp);
-        invoke(4, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries4).getBytes(), timestamp);
-        /*
+        System.out.println("Sending client request to all followers...");
         for (int id = 0; id < replicas.size(); id++) {
             LinkedList<LogElement.LogElementArgs> entries = new LinkedList<>(state.getEntries(id));
             entries.add(newLogEntry);
-            invoke(id, requestLabel, AppendEntriesRPC.appendEntriesArgsToJson(state, entries).getBytes(), timestamp);
-        }*/
+            LogElement.LogElementArgs prevLog = state.getEntry(state.getNextIndex(id) - 1);
+            invoke(
+                    id,
+                    requestLabel,
+                    AppendEntriesRPC.appendEntriesArgsToJson(
+                            state,
+                            entries,
+                            state.getNextIndex(id) - 1,
+                            prevLog
+                    ).getBytes(),
+                    timestamp
+            );
+        }
+        System.out.println("My machine state: " + state.getStateMachine().getCounter());
         entriesSent.set(true);
     }
 
     private static void heartbeat() throws InterruptedException {
         do {
             if(entriesSent.get()) {
-                System.out.println("Entrei!!");
                 entriesSent.set(false);
             } else {
                 System.out.println("* Heartbeats sent *");
@@ -371,12 +358,11 @@ public class Replica {
                             WAIT_HEARTBEAT_INTERVAL.getFirst(),
                             WAIT_HEARTBEAT_INTERVAL.getSecond()
                     );
-                    System.out.println(
+                    /*System.out.println(
                             "--- Waiting " + time + " seconds for a heartbeat. " +
                             "Term: " + state.getCurrentTerm() + " ---"
-                    );
+                    );*/
                     notified = condition.await(time, TimeUnit.SECONDS);
-                    System.out.println("Notificado: " +  notified);
                     if (!notified) {
                         System.out.println("* Heartbeat timeout *");
                         //System.out.println("-> Switched to candidate\n");

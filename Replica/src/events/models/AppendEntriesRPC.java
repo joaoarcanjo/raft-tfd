@@ -22,6 +22,25 @@ public class AppendEntriesRPC {
             this.prevLogTerm = state.getLastLogTerm();
             this.leaderCommit = state.getLastApplied();
         }
+
+        public AppendEntriesArgs(
+                State state,
+                int prevLogIndex,
+                LogElement.LogElementArgs prevLog,
+                LinkedList<LogElement.LogElementArgs> entries
+        ) {
+            if (prevLog == null) {
+                this.prevLogTerm = 0;
+                this.prevLogIndex = -1;
+            } else {
+                this.prevLogTerm = prevLog.getTerm();
+                this.prevLogIndex = prevLogIndex;
+            }
+            this.term = state.getCurrentTerm();
+            this.leaderId = state.getCurrentLeader();
+            this.entries = entries;
+            this.leaderCommit = state.getLastApplied();
+        }
     }
 
     public static class ResultAppendEntry {
@@ -41,6 +60,14 @@ public class AppendEntriesRPC {
      */
     public static String appendEntriesArgsToJson(State state, LinkedList<LogElement.LogElementArgs> entries) {
         return new Gson().toJson(new AppendEntriesRPC.AppendEntriesArgs(state, entries));
+    }
+    public static String appendEntriesArgsToJson(
+            State state,
+            LinkedList<LogElement.LogElementArgs> entries,
+            int prevLogIndex,
+            LogElement.LogElementArgs prevLog
+    ) {
+        return new Gson().toJson(new AppendEntriesRPC.AppendEntriesArgs(state, prevLogIndex, prevLog, entries));
     }
 
     /**

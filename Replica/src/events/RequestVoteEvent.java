@@ -31,8 +31,10 @@ public class RequestVoteEvent implements EventHandler {
         //System.out.println("--- Current term: " + state.getCurrentTerm() + "; votedFor: " + state.getVotedFor() + " ---");
         //System.out.println("--- Term from request received: " + requestVoteArgs.term + " ---\n");
         System.out.println("\n# Received request vote #");
-        if((requestVoteArgs.term == state.getCurrentTerm() && state.getVotedFor() == -1)
-                || requestVoteArgs.term > state.getCurrentTerm()) {
+        if(((requestVoteArgs.term == state.getCurrentTerm() && state.getVotedFor() == -1)
+                || requestVoteArgs.term > state.getCurrentTerm())
+                && requestVoteArgs.lastLogIndex >= state.getLastLogIndex()
+                && requestVoteArgs.lastLogTerm >= state.getLastLogTerm()) {
             vote = true;
             state.setCurrentTerm(requestVoteArgs.term);
             state.setVotedFor(requestVoteArgs.candidateId);
@@ -47,11 +49,12 @@ public class RequestVoteEvent implements EventHandler {
             }
         } else {
             System.out.println("# Voted false, and update replica " + senderId + " term to: " + state.getCurrentTerm());
-        }   // TODO Quando se abre uma quarta ou quinta réplica, não recebe os heartbeats ?! WTF
+        }   //TODO Quando se abre uma quarta ou quinta réplica, não recebe os heartbeats ?! WTF
 
         return Result.newBuilder()
                 .setId(senderId)
                 .setResultMessage(RequestVoteRPC.resultVoteToJson(state.getCurrentTerm(), vote))
+                .setLabel("voteResponse")
                 .build();
     }
 

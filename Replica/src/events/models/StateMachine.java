@@ -18,11 +18,6 @@ public class StateMachine {
                 try {
                     int param = ByteBuffer.wrap(element.getCommandArgs()).getInt();
                     increaseBy(param);
-                    System.out.println("==========================================");
-                    System.out.println("LOG: New log commited!");
-                    System.out.println(" ---> label: " + element.getLabel());
-                    System.out.println(" ---> args: " + param);
-                    System.out.println("LOG: My machine current state: "+ getCounter());
                 } catch (Exception e) {
                     System.out.println("-> Command arg must be an integer.");
                 }

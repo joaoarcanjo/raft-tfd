@@ -14,7 +14,6 @@ public class ClientStreamObserver implements StreamObserver<Result> {
 
     @Override
     public void onNext(Result result) {
-        System.out.println("Result: " + result.getResultMessage());
         blockingQueue.add(result);
     }
 

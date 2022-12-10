@@ -27,6 +27,7 @@ message Result {
   }
   int32 id = 3;
   google.protobuf.Timestamp timestamp = 4;
+  string label = 5;
 }
 /*
 message ResultList {
