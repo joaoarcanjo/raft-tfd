@@ -22,10 +22,10 @@ public class Client {
     private static final int MAXIMUM = 6;
     private static final int INT_SIZE = 4;
     public static final int CLIENT_ID = -1;
-    public static final int WAITING_TIME = 20000;
+    public static final int WAITING_TIME = 10000;
     private static final String INCREASE_LABEL = "increaseBy";
 
-    private static int current_leader = 1;
+    private static int current_leader = 0;
 
     private static final List<Pair<ReplicaAddress, ServerGrpc.ServerBlockingStub>> replicas = new ArrayList<>();
 

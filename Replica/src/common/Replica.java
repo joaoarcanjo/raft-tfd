@@ -306,8 +306,8 @@ public class Replica {
     public static void quorumInvoke(String requestLabel, LogElement.LogElementArgs newLogEntry, Timestamp timestamp) {
         System.out.println("Sending client request to all followers...");
         for (int id = 0; id < replicas.size(); id++) {
+            if(id == replicaId) continue;
             LinkedList<LogElement.LogElementArgs> entries = new LinkedList<>(state.getEntries(id));
-            entries.add(newLogEntry);
             LogElement.LogElementArgs prevLog = state.getEntry(state.getNextIndex(id) - 1);
             invoke(
                     id,

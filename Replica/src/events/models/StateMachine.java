@@ -17,6 +17,7 @@ public class StateMachine {
             case ("increaseBy"): {
                 try {
                     int param = ByteBuffer.wrap(element.getCommandArgs()).getInt();
+                    System.out.println("Param added: " + param);
                     increaseBy(param);
                 } catch (Exception e) {
                     System.out.println("-> Command arg must be an integer.");
