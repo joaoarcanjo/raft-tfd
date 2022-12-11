@@ -27,6 +27,8 @@ localhost:5004
 ```
 (Atenção a eventuais linhas adicionais em branco ou outros caracteres não previstos, o ficheiro apenas deve conter algo semelhante ao que está exemplificado)
 	
+Toda a arquitetura foi testada no máximo com 5 réplicas sendo este o valor máximo pedido para este projeto.
+
 Membros do grupo que participaram em todo o desenvolvimento do projeto:
 Diogo Novo – 60400
 João Arcanjo – 60405
