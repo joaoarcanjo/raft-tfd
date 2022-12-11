@@ -37,7 +37,6 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
 
     @Override
     public void request(Request request, StreamObserver<Result> responseObserver) {
-        System.out.println("---> REQUEST BY CLIENT RECEIVED");
 
         try {
 
@@ -51,7 +50,6 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
                 throw new Exception();
             }
             Replica.blockingQueueClient.add(request);
-            System.out.println("Send response to the client");
             //TODO: PENSAR MELHOR NO QUE É QUE SE VAI DEVOLVER AO CLIENTE
             responseObserver.onNext(Result.newBuilder().setId(state.getCurrentLeader()).build());
             responseObserver.onCompleted();

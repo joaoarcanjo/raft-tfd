@@ -45,13 +45,12 @@ public class AppendEntriesEvent implements EventHandler {
 
     @Override
     public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
-        System.out.println("PROCESS REQUEST RECEIVED.");
         Result result = null;
         monitor.lock();
         try {
             AppendEntriesRPC.AppendEntriesArgs received = AppendEntriesRPC.appendEntriesArgsFromJson(data.toStringUtf8());
-            System.out.println("Received term: " + received.term);
-            System.out.println("State current term: " + state.getCurrentTerm());
+            //System.out.println("Received term: " + received.term);
+            //System.out.println("State current term: " + state.getCurrentTerm());
             if (received.term >= state.getCurrentTerm()) {
                 state.setCurrentTerm(received.term);
                 //If it is a heartbeat.
@@ -65,7 +64,7 @@ public class AppendEntriesEvent implements EventHandler {
                     System.out.println("* Heartbeat received from " + received.leaderId + " *");
                     condition.signal();
                 } else {
-
+                    System.out.println("\n## New entries received from " + received.leaderId + " ##");
                     //System.out.println("PrevLogIndex: " + received.prevLogIndex);
                     //System.out.println("LastLogIndex: " + state.getLastLogIndex());
 
@@ -73,8 +72,8 @@ public class AppendEntriesEvent implements EventHandler {
                     //System.out.println("LastLogTerm: " + state.getLastLogTerm());
 
                     if (received.prevLogIndex == state.getLastLogIndex() && (received.prevLogTerm == state.getLastLogTerm())) {
-                        System.out.println("Number of entries received: " + received.entries.size());
-                        System.out.println("Last log index: " + state.getLastLogIndex());
+                        System.out.println("--> Number of entries received: " + received.entries.size() + "<--");
+                        //System.out.println("Last log index: " + state.getLastLogIndex());
                         received.entries.forEach(state::addToLog);
                         //System.out.println("Leader commit index received: " + received.leaderCommit);
                         state.setCommitIndex(received.leaderCommit);
@@ -84,7 +83,7 @@ public class AppendEntriesEvent implements EventHandler {
                     }
 
                     int nextIndex = state.getLastLogIndex() + 1;
-                    System.out.println("My next index is: " + nextIndex);
+                    System.out.println("--> My next index is: " + nextIndex + " <--");
 
                     result = Result.newBuilder()
                             .setId(senderId)

@@ -77,7 +77,7 @@ public class State {
             nextIndex.add(lastLogIndex + 1);
             matchIndex.add(0);
         }
-        System.out.println("Next index of each replica: " +nextIndex);
+        System.out.println("-> Next index of each replica: " +nextIndex);
     }
     private void incLastLogIndex() {
         lastLogIndex++;
@@ -89,12 +89,14 @@ public class State {
         });
         committedIndex.addAll(nextIndex);
         int majority = nextIndex.size() / 2 + 1;
-        int commitIndexAux = 0;
+        int commitIndexAux = commitIndex;
         while (committedIndex.peek() != null && --majority >= 0) {
             commitIndexAux = committedIndex.poll() - 1;
         }
-        commitIndex = commitIndexAux;
-        System.out.println("New commit index: " + commitIndex);
+
+        if (commitIndex != commitIndexAux) {
+            commitIndex = commitIndexAux;
+        }
         updateStateMachine();
     }
     public void setCommitIndex(int index) {
@@ -129,9 +131,10 @@ public class State {
     public void deleteUncommittedLogs() {
         if (lastLogIndex == -1) return;
         int aux = lastLogIndex;
+        int deletedLogs = 0;
         while(aux-- > lastApplied) {
             lastLogIndex--;
-            System.out.println("Log size: " + log.size());
+            deletedLogs++;
             log.removeLast();
         }
         if(listLogsCommitted > 0) {
@@ -139,6 +142,7 @@ public class State {
         } else {
             initLastLogTerm();
         }
+        System.out.println("--> Number of logs deleted: " + deletedLogs + " <--");
     }
     public int getLastLogTerm() {
         return lastLogTerm;
@@ -180,14 +184,15 @@ public class State {
      */
     public void updateStateMachine() {
         if(lastLogIndex == -1 || commitIndex == -1 || commitIndex <= lastApplied) return; //if it doesn't exist any entry to commit
-        System.out.println("--> Updating state machine...");
+        System.out.println("\n$ Commit index: " + commitIndex + " $");
+        System.out.println("--> Updating state machine <--");
         while(commitIndex > lastApplied) {
             int toApplyIndex = lastApplied + 1;
             LogElement.LogElementArgs element = log.get(toApplyIndex - numberOfFileLines);
             stateMachine.decodeLogElement(element);
             incLastApplied();
         }
-        System.out.println("Current state of machine: " + stateMachine.getCounter());
+        System.out.println("-> New state of machine: " + stateMachine.getCounter()  + " <-\n");
     }
     public StateMachine getStateMachine() {
         return stateMachine;
@@ -195,7 +200,6 @@ public class State {
 
     //TODO: nao respeita os casos do ficheiro.
     public LogElement.LogElementArgs getEntry(int index) {
-        System.out.println("Index: " + index);
         if(index < 0) return null;
         /*
         int lineToReadFromFile = (lastLogIndex - index) - log.size();
@@ -213,18 +217,16 @@ public class State {
     public LinkedList<LogElement.LogElementArgs> getEntries(int replicaId) {
         //index is the next index to send to the follower.
         int index = nextIndex.get(replicaId);
-        System.out.println("ReplicaId: " + replicaId + ", index: " + index);
+        //System.out.println("ReplicaId: " + replicaId + ", index: " + index);
         LinkedList<LogElement.LogElementArgs> entries = new LinkedList<>();
 
         //int linesToReadFromFile = (lastLogIndex - index) - log.size();
         //if (linesToReadFromFile == 0) return log;
         //if (linesToReadFromFile < 0) {
         if (log.size() > 0) {
-            System.out.println("Index replica: " + index);
-            System.out.println("lastLogIndex replica: " + lastLogIndex);
+            //System.out.println("Index replica: " + index);
+            //System.out.println("lastLogIndex replica: " + lastLogIndex);
             for (int i = index; i <= lastLogIndex; i++) {
-                System.out.println("Value:");
-                System.out.println(ByteBuffer.wrap(log.get(i).getCommandArgs()).getInt());
                 entries.add(log.get(i));
             }
             return entries;
@@ -234,13 +236,4 @@ public class State {
         entries.addAll(log);*/
         return entries;
     }
-
-    //se a diferença entre o index e o commitIndex for superior à lista de logs, temos que
-    //ir buscar alguns ao ficheiro. Ou seja, se o index for 20, e o commitIndex for 35, quer dizer
-    //que o lider tem que enviar 15 entries. Por exemplo, caso a lista apenas contenha 10 entries,
-    //temos que ir ao ficheiro buscar as últimas 5 linhas, para podermos enviar as 15 que o follower necessita.
-
-    //se a seguinte variavel, se possuir um valor superior a 0, é o número de linhas a ir buscar ao ficheiro
-    //se o número for 0, basta retornar toda a lista log.
-    //se o número for inferior a 0, quer dizer que as entries necessarias estao todas na log, é ir buscar as ultimas commitIndex-index
 }

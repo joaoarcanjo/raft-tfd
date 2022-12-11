@@ -25,7 +25,7 @@ public class Client {
     public static final int WAITING_TIME = 10000;
     private static final String INCREASE_LABEL = "increaseBy";
 
-    private static int current_leader = 0;
+    private static int current_leader = 2;
 
     private static final List<Pair<ReplicaAddress, ServerGrpc.ServerBlockingStub>> replicas = new ArrayList<>();
 

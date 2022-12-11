@@ -36,6 +36,7 @@ public class Replica {
      * Each position of the list correspond to an id of a replica, which contains its socket address
      */
     private static final List<Pair<ReplicaAddress, ServerGrpc.ServerStub>> replicas = new ArrayList<>();
+    private static String configFilePath;
     private static Thread serverThread;
     private static Thread resultsThread;
     private static Thread requestsThread;
@@ -91,6 +92,14 @@ public class Replica {
             }
         }
     }
+    private static void initChannels() {
+        try {
+            readConfigFile(configFilePath);
+        } catch (Exception e) {
+            System.out.println("* ERROR * " + e);
+        }
+    }
+
     /**
      * Initializes the thread responsible for waiting for the results to arrive and then processes the results obtained
      *
@@ -177,8 +186,9 @@ public class Replica {
 
                     switch (request.getLabel()) {
                         case ("increaseBy"): {
+                            System.out.println("\n## Increase by operation called ##");
                             int arg = ByteBuffer.wrap(newLogEntry.getCommandArgs()).getInt();
-                            System.out.println("arg ----> " + arg);
+                            System.out.println("-> Argument value: " + arg +" <--");
                             if(arg < 1 || arg > 5) {
                                 throw new Exception();
                             }
@@ -188,7 +198,7 @@ public class Replica {
                             break;
                         }
                         default:
-                            System.out.println("-> Unrecognizable label.");
+                            System.out.println("--> Unrecognizable operation called <--");
                     }
                 }
             } catch (Exception e) {
@@ -206,11 +216,7 @@ public class Replica {
                 AppendEntriesRPC.resultAppendEntryFromJson(result.getResultMessage());
 
         if (received != null && result.getLabel().equals("entriesResponse")) {
-            System.out.println("RESULT ARRIVED.");
-            System.out.println("_________________________________");
-            System.out.println("LOG: Reply received by : "+ result.getId());
-            System.out.println("---> NextIndex: "+received.nextIndex);
-            System.out.println("_________________________________");
+            System.out.println("* Next index of replica: "+ result.getId() +" is: " + received.nextIndex + " *");
             state.setNextIndex(result.getId(), received.nextIndex);
             state.updateCommitIndexLeader();
         }
@@ -224,7 +230,6 @@ public class Replica {
      * @throws IOException in case an I/O error occurs while reading the file
      */
     private static void initReplica(int id, String configFilePath, int term) throws IOException {
-    //private static void initReplica(int id, String configFilePath) throws IOException {
         replicaId = id;
         monitor = new ReentrantLock();
         condition = monitor.newCondition();
@@ -233,7 +238,6 @@ public class Replica {
         lastRequestTimestamp = new AtomicReference<>(null);
         resultsThread = initResultsThread();
         state = new State(term, replicaId);
-        //state = new State();
         eventLogic = new EventLogic(monitor, condition, state);
         serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic, state);
         requestsThread = readClientRequests();
@@ -300,7 +304,7 @@ public class Replica {
     }
 
     public static void quorumInvoke(String requestLabel, Timestamp timestamp) {
-        System.out.println("Sending client request to all followers...");
+        System.out.println("-> Sending entries to the clients <-");
         for (int id = 0; id < replicas.size(); id++) {
             if(id == replicaId) continue;
             LinkedList<LogElement.LogElementArgs> entries = new LinkedList<>(state.getEntries(id));
@@ -317,7 +321,6 @@ public class Replica {
                     timestamp
             );
         }
-        System.out.println("My machine state: " + state.getStateMachine().getCounter());
         entriesSent.set(true);
     }
 
@@ -354,14 +357,13 @@ public class Replica {
                             WAIT_HEARTBEAT_INTERVAL.getFirst(),
                             WAIT_HEARTBEAT_INTERVAL.getSecond()
                     );
-                    /*System.out.println(
+                    System.out.println(
                             "--- Waiting " + time + " seconds for a heartbeat. " +
                             "Term: " + state.getCurrentTerm() + " ---"
-                    );*/
+                    );
                     notified = condition.await(time, TimeUnit.SECONDS);
                     if (!notified) {
                         System.out.println("* Heartbeat timeout *");
-                        //System.out.println("-> Switched to candidate\n");
                     }
                 }
 
@@ -402,15 +404,6 @@ public class Replica {
                         state.setCurrentState(State.ReplicaState.FOLLOWER);
                     }
                 }
-
-                // if follower: no heartbeat -> changes to candidate and requests votes //OK
-                // if follower: receives heartbeat -> resets timer and awaits //OK
-                // if follower: receives a requestVote -> ?
-                // if candidate: not enough votes and no heartbeat -> send requestVotes again //OK
-                // if candidate: enough votes, change to leader and invoke heartbeats //OK
-                // if candidate: receives heartbeat and the leader is legit, changes to follower
-                // if candidate: receives heartbeat and the leader isn't legit (lower term), continues in candidate state
-                // if leader: send heartbeats or log entries
             }
         } finally {
             monitor.unlock();
@@ -428,7 +421,8 @@ public class Replica {
                 term = Integer.parseInt(args[2]);
             System.out.println("Start Term: " + term);
             args[0] = auxToDelete();
-            initReplica(Integer.parseInt(args[0]), args[1], term);
+            configFilePath = args[1];
+            initReplica(Integer.parseInt(args[0]), configFilePath, term);
             //initReplica(Integer.parseInt(args[0]), args[1]);
             System.out.println(" * REPLICA ID: " + replicaId + " *");
             // operations();
