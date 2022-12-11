@@ -229,7 +229,7 @@ public class Replica {
      * @param configFilePath absolute path to the configuration text file with the replicas' address
      * @throws IOException in case an I/O error occurs while reading the file
      */
-    private static void initReplica(int id, String configFilePath, int term) throws IOException {
+    private static void initReplica(int id, String configFilePath, int term, String filePath) throws IOException {
         replicaId = id;
         monitor = new ReentrantLock();
         condition = monitor.newCondition();
@@ -237,7 +237,7 @@ public class Replica {
         waitingResults = new AtomicInteger(0);
         lastRequestTimestamp = new AtomicReference<>(null);
         resultsThread = initResultsThread();
-        state = new State(term, replicaId);
+        state = new State(term, replicaId, filePath);
         eventLogic = new EventLogic(monitor, condition, state);
         serverThread = GRPCServer.initServerThread(replicas.get(replicaId).getFirst().getPort(), eventLogic, state);
         requestsThread = readClientRequests();
@@ -387,7 +387,7 @@ public class Replica {
                     System.out.println("--- Waiting " + time + " seconds for votes ---");
                     notified = condition.await(time, TimeUnit.SECONDS);
 
-                    //Se tiver sido notificado e ter obtido a maioria dos votos, vai ser lider
+                    //If you have been notified and obtained the majority of votes, you will be leader
                     if (notified && waitingResults.get() == 0) {
                         state.initLeaderState(replicas.size());
                         System.out.println("\n-> Switched to LEADER. Term: " + state.getCurrentTerm());
@@ -398,7 +398,7 @@ public class Replica {
                         System.out.println("! Leader role lost, switching to follower !");
                         state.setCurrentState(State.ReplicaState.FOLLOWER);
                     }
-                    //se foi notificado é porque recebeu um heartbeat, há outro lider
+                    //If you were notified it's because you received a heartbeat, there is another leader
                     else if (notified) {
                         System.out.println("\n-> Switched to FOLLOWER. Term: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.FOLLOWER);
@@ -412,17 +412,17 @@ public class Replica {
 
     public static void main(String[] args) {
         try {
-            if (args.length < 2) {
-                System.out.println("Usage: java -jar common.Replica.jar <id(>= 0)> <configFile(absolute path)>");
+            if (args.length < 3) {
+                System.out.println("Usage: java -jar common.Replica.jar <id(>= 0)> <configFile(absolute path)> <logFile(absolute path)>");
                 System.exit(-1);
             }
             int term = 0;
-            if(args.length > 2)
-                term = Integer.parseInt(args[2]);
+            if(args.length > 3)
+                term = Integer.parseInt(args[3]);
             System.out.println("Start Term: " + term);
             //args[0] = auxToDelete();
             configFilePath = args[1];
-            initReplica(Integer.parseInt(args[0]), configFilePath, term);
+            initReplica(Integer.parseInt(args[0]), configFilePath, term, args[2]);
             //initReplica(Integer.parseInt(args[0]), args[1]);
             System.out.println(" * REPLICA ID: " + replicaId + " *");
             // operations();
@@ -431,7 +431,7 @@ public class Replica {
             System.out.println("* ERROR * " + e);
         }
     }
-/*
+    /*
     //apenas para poder criar varias instancias sem ter que estar a alterar o argument 0.
     public static String auxToDelete() {
         Scanner scanner = new Scanner(System.in);

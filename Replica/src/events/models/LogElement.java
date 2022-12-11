@@ -17,14 +17,12 @@ public class LogElement {
         public byte[] getCommandArgs() {
             return commandArgs;
         }
-
         public String getLabel() {
             return label;
         }
         public int getTerm() {
             return term;
         }
-
     }
 
     public static String logElementToJson(LogElementArgs logElement) {

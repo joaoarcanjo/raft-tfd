@@ -1,8 +1,11 @@
 package events.models;
 
 import java.nio.ByteBuffer;
+import java.util.HashSet;
+import java.util.List;
 
 public class StateMachine {
+    public static final HashSet<String> OPERATIONS = new HashSet<>(List.of("increaseBy"));
     private int counter = 0;
 
     public int getCounter() {

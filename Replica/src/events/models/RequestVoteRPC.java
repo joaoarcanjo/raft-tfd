@@ -65,15 +65,6 @@ public class RequestVoteRPC {
     public static String resultVoteToJson(int term, boolean vote) {
         return new Gson().toJson(new ResultVote(term, vote));
     }
-
-    public static boolean verifyResultVoteSyntax(String json) {
-        try {
-            new Gson().fromJson(json, ResultVote.class);
-            return true;
-        } catch (JsonSyntaxException e) {
-            return false;
-        }
-    }
 }
 
 

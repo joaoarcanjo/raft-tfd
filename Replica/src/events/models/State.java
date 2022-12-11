@@ -18,7 +18,7 @@ public class State {
     //Number of committed entries present in the log list
     private int listLogsCommitted;
     private final int COMMITS_TO_FILE = 2;
-    private Pair<Integer, Integer> nextLimitsToFile;
+    private Pair<Integer, Integer> nextPairToFile;
     //The term of the last log
     private int lastLogTerm;
     //Number of logs (committed e uncommitted).
@@ -36,8 +36,8 @@ public class State {
     private LinkedList<Integer> matchIndex;
     private final StateMachine stateMachine;
 
-    public State(int term, int replicaId) {
-        logFile = "log" + replicaId + ".txt";
+    public State(int term, int replicaId, String filePath) {
+        logFile = filePath;
         numberOfFileLines = FileManager.getNumberOfLines(logFile);
         currentTerm = term;
         votedFor = -1;
@@ -49,7 +49,7 @@ public class State {
         currentState = ReplicaState.FOLLOWER;
         stateMachine = new StateMachine();
         initLog();
-        nextLimitsToFile = new Pair<>(-1, -1);
+        nextPairToFile = new Pair<>(-1, -1);
     }
     public void listCommittedLogs() {
         System.out.println("-- List of committed logs --");
@@ -73,8 +73,6 @@ public class State {
             LinkedList<String> lines = FileManager.readLastNLines(logFile, numberOfFileLines);
             lines.forEach(line -> {
                 LogElement.LogElementArgs element = LogElement.jsonToLogElement(line);
-                int arg = ByteBuffer.wrap(element.getCommandArgs()).getInt();
-                System.out.println(arg);
                 log.add(element);
                 stateMachine.decodeLogElement(element);
             });
@@ -213,18 +211,18 @@ public class State {
         System.out.println("-> New state of machine: " + stateMachine.getCounter()  + " <-\n");
     }
     public void updateLimits() {
-        if(nextLimitsToFile.getFirst() == -1) {
-            nextLimitsToFile.setFirst(lastApplied);
+        if(nextPairToFile.getFirst() == -1) {
+            nextPairToFile.setFirst(lastApplied);
         }
-        nextLimitsToFile.setSecond(lastApplied);
-        if((nextLimitsToFile.getSecond() - nextLimitsToFile.getFirst()) >= COMMITS_TO_FILE - 1) {
-            for (int i = nextLimitsToFile.getFirst(); i <= nextLimitsToFile.getSecond(); i++) {
+        nextPairToFile.setSecond(lastApplied);
+        if((nextPairToFile.getSecond() - nextPairToFile.getFirst()) >= COMMITS_TO_FILE - 1) {
+            for (int i = nextPairToFile.getFirst(); i <= nextPairToFile.getSecond(); i++) {
                 String line = LogElement.logElementToJson(log.get(i));
                 FileManager.addLine(logFile, LogElement.logElementToJson(log.get(i)));
                 System.out.println("Line added: " + line);
             }
-            nextLimitsToFile.setFirst(-1);
-            nextLimitsToFile.setSecond(-1);
+            nextPairToFile.setFirst(-1);
+            nextPairToFile.setSecond(-1);
         }
     }
     public LogElement.LogElementArgs getEntry(int index) {

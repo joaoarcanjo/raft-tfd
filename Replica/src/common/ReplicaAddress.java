@@ -10,14 +10,12 @@ public class ReplicaAddress {
         this.port = Integer.parseInt(content[1]);
 
     }
-
     public String getIp() {
         return ip;
     }
     public int getPort() {
         return port;
     }
-
     @Override
     public String toString() {
         return ip + ":" + port;

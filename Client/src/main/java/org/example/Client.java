@@ -22,7 +22,7 @@ public class Client {
     private static final int MAXIMUM = 6;
     private static final int INT_SIZE = 4;
     public static final int CLIENT_ID = -1;
-    public static final int WAITING_TIME = 10000;
+    public static final int WAITING_TIME = 5000;
     private static final String INCREASE_LABEL = "increaseBy";
 
     private static int current_leader = 2;
@@ -52,7 +52,7 @@ public class Client {
                 System.out.println("Sending command to replica " + current_leader);
                 Result response = replicas.get(current_leader).getSecond().request(request);
 
-                System.out.println("Response arrived: " + response.getResults().toStringUtf8());
+                System.out.println("Response arrived: " + response.getResultMessage());
 
                 if (response.getId() == -1) {
                     return;

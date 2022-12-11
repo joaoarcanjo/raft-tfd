@@ -1,11 +1,7 @@
 package common;
 
-import events.AppendEntriesEvent;
-import events.IncreaseByEvent;
 import events.EventHandler;
 import events.EventLogic;
-import events.models.AppendEntriesRPC;
-import events.models.LogElement;
 import events.models.State;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
@@ -17,11 +13,9 @@ import replica.Result;
 import replica.ServerGrpc;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.LinkedList;
 import java.util.Optional;
 
-import static events.IncreaseByEvent.OPERATIONS;
+import static events.models.StateMachine.OPERATIONS;
 
 public class GRPCServer extends ServerGrpc.ServerImplBase {
     private static Server svc;
