@@ -44,23 +44,38 @@ public class Client {
         }
     }
 
-    private static void sendCommands() throws InterruptedException {
+    private static void sendCommands() {
         Request request = createRequestMessage();
+        boolean reset = false;
         while (true) {
-            System.out.println("Send command:");
-            Result response = replicas.get(current_leader).getSecond().request(request);
+            try {
+                System.out.println("Sending command to replica " + current_leader);
+                Result response = replicas.get(current_leader).getSecond().request(request);
 
-            System.out.println("Response arrived: " + response.getResults().toStringUtf8());
+                System.out.println("Response arrived: " + response.getResults().toStringUtf8());
 
-            if(response.getId() == -1) {
-                return;
-            }
-            if (response.getId() != current_leader) {
-                current_leader = response.getId();
-                System.out.println("Switched leader to: " + current_leader);
-            } else {
-                Thread.sleep(WAITING_TIME);
-                request = createRequestMessage();
+                if (response.getId() == -1) {
+                    return;
+                }
+                if (response.getId() != current_leader) {
+                    current_leader = response.getId();
+                    System.out.println("Switched leader to: " + current_leader);
+                } else {
+                    Thread.sleep(WAITING_TIME);
+                    request = createRequestMessage();
+                }
+            } catch (Exception e){
+                if(current_leader > 0 && !reset) {
+                    current_leader = 0;
+                    reset = true;
+                } else {
+                    current_leader++;
+                    if (current_leader == replicas.size()) {
+                        System.out.println("No available replicas to be found, exiting..");
+                        System.exit(-1);
+                    }
+                }
+                System.out.println("No reply from replica or crash occurred, attempting communication with other known replica (" + current_leader + ")");
             }
 
         }
@@ -70,7 +85,7 @@ public class Client {
         System.out.println("Create request message called");
         Random rand = new Random();
         int value = rand.nextInt(MAXIMUM - MINIMUM) + MINIMUM;
-        System.out.println("Random generated:"+ value);
+        System.out.println("Random value generated: "+ value);
             byte[] data = ByteBuffer.allocate(INT_SIZE).putInt(value).array();
         return Request.newBuilder()
                 .setId(CLIENT_ID)
