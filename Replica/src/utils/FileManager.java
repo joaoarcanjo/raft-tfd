@@ -46,13 +46,4 @@ public class FileManager {
             throw new RuntimeException(e);
         }
     }
-
-    public static void main(String[] args) {
-        //System.out.println(readLine(".\\src\\common\\test.txt", 2));
-        //deleteFromLine(".\\src\\common\\test.txt", 4);
-        //addLine(".\\src\\common\\test.txt", "oDiogoéGay");
-        //System.out.println(getFileSize(".\\src\\common\\test.txt"));;
-        //System.out.println(readLastNLines("ola.txt", 4));
-        //System.out.println(getNumberOfLines("log0.txt"));
-    }
 }

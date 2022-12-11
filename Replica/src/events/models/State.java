@@ -1,7 +1,7 @@
 package events.models;
 
 import utils.FileManager;
-
+import utils.Pair;
 import java.nio.ByteBuffer;
 import java.util.*;
 
@@ -14,9 +14,11 @@ public class State {
     private int votedFor;
     private ReplicaState currentState;
     //Command and term
-    private final LinkedList<LogElement.LogElementArgs> log;
+    private LinkedList<LogElement.LogElementArgs> log;
     //Number of committed entries present in the log list
     private int listLogsCommitted;
+    private final int COMMITS_TO_FILE = 2;
+    private Pair<Integer, Integer> nextLimitsToFile;
     //The term of the last log
     private int lastLogTerm;
     //Number of logs (committed e uncommitted).
@@ -36,17 +38,18 @@ public class State {
 
     public State(int term, int replicaId) {
         logFile = "log" + replicaId + ".txt";
-        numberOfFileLines = FileManager.getNumberOfLines(logFile); //TODO: atualizar quando se envia para o ficheiro.
+        numberOfFileLines = FileManager.getNumberOfLines(logFile);
         currentTerm = term;
         votedFor = -1;
-        commitIndex = numberOfFileLines;
+        commitIndex = numberOfFileLines - 1;
         lastApplied = numberOfFileLines - 1;
         lastLogIndex = numberOfFileLines - 1;
         lastLogTerm = initLastLogTerm();
         listLogsCommitted = 0;
-        log = new LinkedList<>();
         currentState = ReplicaState.FOLLOWER;
         stateMachine = new StateMachine();
+        initLog();
+        nextLimitsToFile = new Pair<>(-1, -1);
     }
     public void listCommittedLogs() {
         System.out.println("-- List of committed logs --");
@@ -63,6 +66,20 @@ public class State {
             int arg = ByteBuffer.wrap(log.get(i).getCommandArgs()).getInt();
             System.out.println("- Entry of log: " + arg);
         }
+    }
+    public void initLog() {
+        log = new LinkedList<>();
+        if(numberOfFileLines > 0) {
+            LinkedList<String> lines = FileManager.readLastNLines(logFile, numberOfFileLines);
+            lines.forEach(line -> {
+                LogElement.LogElementArgs element = LogElement.jsonToLogElement(line);
+                int arg = ByteBuffer.wrap(element.getCommandArgs()).getInt();
+                System.out.println(arg);
+                log.add(element);
+                stateMachine.decodeLogElement(element);
+            });
+        }
+        System.out.println("-> State of machine: " + stateMachine.getCounter()  + " <-\n");
     }
 
     private int initLastLogTerm() {
@@ -186,43 +203,38 @@ public class State {
         if(lastLogIndex == -1 || commitIndex == -1 || commitIndex <= lastApplied) return; //if it doesn't exist any entry to commit
         System.out.println("\n$ Commit index: " + commitIndex + " $");
         System.out.println("--> Updating state machine <--");
-        while(commitIndex > lastApplied) {
+        while(commitIndex < log.size() && commitIndex > lastApplied) {
             int toApplyIndex = lastApplied + 1;
-            LogElement.LogElementArgs element = log.get(toApplyIndex - numberOfFileLines);
+            LogElement.LogElementArgs element = log.get(toApplyIndex);
             stateMachine.decodeLogElement(element);
             incLastApplied();
         }
+        updateLimits();
         System.out.println("-> New state of machine: " + stateMachine.getCounter()  + " <-\n");
     }
-    public StateMachine getStateMachine() {
-        return stateMachine;
+    public void updateLimits() {
+        if(nextLimitsToFile.getFirst() == -1) {
+            nextLimitsToFile.setFirst(lastApplied);
+        }
+        nextLimitsToFile.setSecond(lastApplied);
+        if((nextLimitsToFile.getSecond() - nextLimitsToFile.getFirst()) >= COMMITS_TO_FILE - 1) {
+            for (int i = nextLimitsToFile.getFirst(); i <= nextLimitsToFile.getSecond(); i++) {
+                String line = LogElement.logElementToJson(log.get(i));
+                FileManager.addLine(logFile, LogElement.logElementToJson(log.get(i)));
+                System.out.println("Line added: " + line);
+            }
+            nextLimitsToFile.setFirst(-1);
+            nextLimitsToFile.setSecond(-1);
+        }
     }
-
-    //TODO: nao respeita os casos do ficheiro.
     public LogElement.LogElementArgs getEntry(int index) {
         if(index < 0) return null;
-        /*
-        int lineToReadFromFile = (lastLogIndex - index) - log.size();
-        System.out.println("Lines to read from file: " + lineToReadFromFile);
-        if (lineToReadFromFile == 0) return log.get(0);
-        if (lineToReadFromFile < 0) {
-            int i = log.size() - (commitIndex - index);
-            System.out.println("Index from log list: " + i);
-            return log.get(i);
-        }
-        return LogElement.jsonToLogElement(FileManager.readLine(logFile, lineToReadFromFile));*/
         return log.get(index);
     }
-    //TODO: nao respeita os casos do ficheiro.
     public LinkedList<LogElement.LogElementArgs> getEntries(int replicaId) {
-        //index is the next index to send to the follower.
         int index = nextIndex.get(replicaId);
         //System.out.println("ReplicaId: " + replicaId + ", index: " + index);
         LinkedList<LogElement.LogElementArgs> entries = new LinkedList<>();
-
-        //int linesToReadFromFile = (lastLogIndex - index) - log.size();
-        //if (linesToReadFromFile == 0) return log;
-        //if (linesToReadFromFile < 0) {
         if (log.size() > 0) {
             //System.out.println("Index replica: " + index);
             //System.out.println("lastLogIndex replica: " + lastLogIndex);
@@ -230,10 +242,7 @@ public class State {
                 entries.add(log.get(i));
             }
             return entries;
-        }/*
-        FileManager.readLastNLines(logFile, linesToReadFromFile)
-                .forEach(line -> entries.add(LogElement.jsonToLogElement(line)));
-        entries.addAll(log);*/
+        }
         return entries;
     }
 }

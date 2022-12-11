@@ -114,7 +114,7 @@ public class Replica {
                 while (!terminate) {
                     try {
                         monitor.unlock();
-                        result = blockingQueue.take(); //resposta do voto. //resposta do appendEntries
+                        result = blockingQueue.take();
                         monitor.lock();
                         if (state.getCurrentState() == State.ReplicaState.CANDIDATE) {
                             RequestVoteRPC.ResultVote received = RequestVoteRPC.resultVoteFromJson(result.getResultMessage());
@@ -304,7 +304,7 @@ public class Replica {
     }
 
     public static void quorumInvoke(String requestLabel, Timestamp timestamp) {
-        System.out.println("-> Sending entries to the clients <-");
+        System.out.println("-> Sending entries to the replicas <-");
         for (int id = 0; id < replicas.size(); id++) {
             if(id == replicaId) continue;
             LinkedList<LogElement.LogElementArgs> entries = new LinkedList<>(state.getEntries(id));
@@ -420,7 +420,7 @@ public class Replica {
             if(args.length > 2)
                 term = Integer.parseInt(args[2]);
             System.out.println("Start Term: " + term);
-            args[0] = auxToDelete();
+            //args[0] = auxToDelete();
             configFilePath = args[1];
             initReplica(Integer.parseInt(args[0]), configFilePath, term);
             //initReplica(Integer.parseInt(args[0]), args[1]);
@@ -431,10 +431,10 @@ public class Replica {
             System.out.println("* ERROR * " + e);
         }
     }
-
+/*
     //apenas para poder criar varias instancias sem ter que estar a alterar o argument 0.
     public static String auxToDelete() {
         Scanner scanner = new Scanner(System.in);
         return scanner.nextLine();
-    }
+    }*/
 }

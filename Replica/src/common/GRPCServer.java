@@ -50,14 +50,12 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
                 throw new Exception();
             }
             Replica.blockingQueueClient.add(request);
-            //TODO: PENSAR MELHOR NO QUE É QUE SE VAI DEVOLVER AO CLIENTE
-            responseObserver.onNext(Result.newBuilder().setId(state.getCurrentLeader()).build());
+            responseObserver.onNext(Result.newBuilder()
+                    .setId(state.getCurrentLeader())
+                    .setResultMessage("Request being processed.")
+                    .build());
             responseObserver.onCompleted();
 
-            // enviar add to log
-            // incrementar a coisa
-            // enviar commit
-            // retornar alguma informaçao
         } catch (Exception e) {
             Throwable th = new StatusException(Status.ABORTED.withDescription("There was a problem"));
             responseObserver.onError(th);
