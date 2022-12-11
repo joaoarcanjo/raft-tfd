@@ -176,7 +176,7 @@ public class Replica {
                     );
 
                     switch (request.getLabel()) {
-                        case (IncreaseByEvent.LABEL): {
+                        case ("increaseBy"): {
                             int arg = ByteBuffer.wrap(newLogEntry.getCommandArgs()).getInt();
                             System.out.println("arg ----> " + arg);
                             if(arg < 1 || arg > 5) {
@@ -184,7 +184,7 @@ public class Replica {
                             }
                             state.addToLog(newLogEntry);
                             state.incNextIndex(replicaId);
-                            quorumInvoke(AppendEntriesEvent.LABEL, newLogEntry, request.getTimestamp());
+                            quorumInvoke(AppendEntriesEvent.LABEL, request.getTimestamp());
                             break;
                         }
                         default:
@@ -199,7 +199,6 @@ public class Replica {
         resultsThread.start();
         return resultsThread;
     }
-
 
     private static void appendEntryResponse(Result result) {
 
@@ -275,9 +274,6 @@ public class Replica {
                                 throw new IllegalArgumentException("Invalid label");
                             }
                     );
-            //resetRequestTimestamp(); //?
-            //waitingResults.set(0); //?
-            //waitingResults.decrementAndGet();
             return;
         }
 
@@ -303,7 +299,7 @@ public class Replica {
         }
     }
 
-    public static void quorumInvoke(String requestLabel, LogElement.LogElementArgs newLogEntry, Timestamp timestamp) {
+    public static void quorumInvoke(String requestLabel, Timestamp timestamp) {
         System.out.println("Sending client request to all followers...");
         for (int id = 0; id < replicas.size(); id++) {
             if(id == replicaId) continue;
@@ -371,6 +367,7 @@ public class Replica {
 
                 if (!notified) {
                     state.incCurrentTerm();
+                    state.deleteUncommittedLogs();
                     state.setCurrentState(State.ReplicaState.CANDIDATE);
                     System.out.println("-> Switched to CANDIDATE. Term: " + state.getCurrentTerm());
 
@@ -390,7 +387,7 @@ public class Replica {
 
                     //Se tiver sido notificado e ter obtido a maioria dos votos, vai ser lider
                     if (notified && waitingResults.get() == 0) {
-                        state.InitLeaderState(replicas.size());
+                        state.initLeaderState(replicas.size());
                         System.out.println("\n-> Switched to LEADER. Term: " + state.getCurrentTerm());
                         state.setCurrentState(State.ReplicaState.LEADER);
                         state.setCurrentLeader(replicaId);

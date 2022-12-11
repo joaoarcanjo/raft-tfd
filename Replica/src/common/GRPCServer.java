@@ -83,13 +83,6 @@ public class GRPCServer extends ServerGrpc.ServerImplBase {
         responseObserver.onCompleted();
     }
 
-    //TODO: implementar o request, que será chamado pelo client.
-    // -> se o server n for o lider, informa o client quem é.
-    // -> se for o lider, vai adicionar ao log, e enviar para os restantes followers,
-    // quando a maioria receber o pedido do client, o server vai dar commit do log, vai
-    // afetar a state machine, irá informar os restantes que realizou o commit e que
-    // também o podem realizar e informará o cliente que o pedido foi processado com exito.
-
     /**
      * Initializes the thread responsible for receiving the requests sent by the others replicas
      * @param port port number for the server

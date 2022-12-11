@@ -1,7 +1,5 @@
 package events.models;
 
-import common.Replica;
-import replica.Result;
 import utils.FileManager;
 
 import java.nio.ByteBuffer;
@@ -50,12 +48,29 @@ public class State {
         currentState = ReplicaState.FOLLOWER;
         stateMachine = new StateMachine();
     }
+    public void listCommittedLogs() {
+        System.out.println("-- List of committed logs --");
+        System.out.println("-> Last applied: " + lastApplied);
+        System.out.println("-> listLogsCommitted: " + listLogsCommitted);
+        for (int i = 0; i <= lastApplied; i++) {
+            int arg = ByteBuffer.wrap(log.get(i).getCommandArgs()).getInt();
+            System.out.println("- Entry Committed: " + arg);
+        }
+    }
+    public void listAllLogs() {
+        System.out.println("-- List of all logs --");
+        for (int i = 0; i <= lastLogIndex; i++) {
+            int arg = ByteBuffer.wrap(log.get(i).getCommandArgs()).getInt();
+            System.out.println("- Entry of log: " + arg);
+        }
+    }
+
     private int initLastLogTerm() {
         LinkedList<String> lines = FileManager.readLastNLines(logFile, 1);
         if(lines.isEmpty()) return 0;
         return LogElement.jsonToLogElement(lines.getLast()).getTerm();
     }
-    public void InitLeaderState(int numberOfReplicas) {
+    public void initLeaderState(int numberOfReplicas) {
         nextIndex = new LinkedList<>();
         matchIndex = new LinkedList<>();
         for (int i = 0; i < numberOfReplicas; i++) {
@@ -68,21 +83,18 @@ public class State {
         lastLogIndex++;
     }
     public void updateCommitIndexLeader() {
-        PriorityQueue<Integer> majority = new PriorityQueue<>((o1, o2) -> {
+        PriorityQueue<Integer> committedIndex = new PriorityQueue<>((o1, o2) -> {
             if (Objects.equals(o1, o2)) return 0;
             return o1 > o2 ? -1 : +1;
         });
-        majority.addAll(nextIndex);
-        int aux = nextIndex.size() / 2 + 1;
+        committedIndex.addAll(nextIndex);
+        int majority = nextIndex.size() / 2 + 1;
         int commitIndexAux = 0;
-        while (majority.peek() != null && --aux >= 0) {
-            commitIndexAux = majority.poll() - 1; //-1 porque o matchIndex é o proximo a receber, logo sabemos que todos têm o mat
+        while (committedIndex.peek() != null && --majority >= 0) {
+            commitIndexAux = committedIndex.poll() - 1;
         }
-        System.out.println(nextIndex);
-        //update commitIndex
         commitIndex = commitIndexAux;
         System.out.println("New commit index: " + commitIndex);
-        //atualizar maquina.
         updateStateMachine();
     }
     public void setCommitIndex(int index) {
@@ -109,20 +121,25 @@ public class State {
     public void setCurrentState(ReplicaState currentState) {
         this.currentState = currentState;
     }
-
     public void addToLog(LogElement.LogElementArgs element) {
         log.add(element);
         incLastLogIndex();
         lastLogTerm = element.getTerm();
     }
-
     public void deleteUncommittedLogs() {
-        while(log.size() >= listLogsCommitted) {
-            log.remove();
+        if (lastLogIndex == -1) return;
+        int aux = lastLogIndex;
+        while(aux-- > lastApplied) {
+            lastLogIndex--;
+            System.out.println("Log size: " + log.size());
+            log.removeLast();
         }
-        lastLogIndex = FileManager.getNumberOfLines(logFile) + listLogsCommitted;
+        if(listLogsCommitted > 0) {
+            lastLogTerm = log.get(lastLogIndex).getTerm();
+        } else {
+            initLastLogTerm();
+        }
     }
-
     public int getLastLogTerm() {
         return lastLogTerm;
     }
@@ -136,8 +153,8 @@ public class State {
         this.currentLeader = currentLeader;
     }
     public void incCommitIndex() {
-        ++listLogsCommitted;
-        ++commitIndex;
+       /* ++listLogsCommitted;
+        ++commitIndex;*/
     }
     public int getCommitIndex() { return commitIndex; }
     public int getLastApplied() { return lastApplied; }
@@ -148,11 +165,9 @@ public class State {
         matchIndex.set(replicaId, matchIndex.get(replicaId) + 1);
     }
     public void setNextIndex(int replicaId, int index) {
-        //System.out.println("Replica: "+ replicaId + ", nextIndex updated to: " + index + ".");
         nextIndex.set(replicaId, index);
     }
     public void incNextIndex(int replicaId) {
-        //System.out.println("Replica: "+ replicaId + ", nextIndex updated to: " + nextIndex.get(replicaId) + 1 + ".");
         nextIndex.set(replicaId, nextIndex.get(replicaId) + 1);
     }
     public int getNextIndex(int replicaId) {
@@ -164,7 +179,7 @@ public class State {
      * This function will affect the last entry of logs to the state machine
      */
     public void updateStateMachine() {
-        if(commitIndex == -1 || commitIndex <= lastApplied) return; //if it doesn't exist any entry to commit
+        if(lastLogIndex == -1 || commitIndex == -1 || commitIndex <= lastApplied) return; //if it doesn't exist any entry to commit
         System.out.println("--> Updating state machine...");
         while(commitIndex > lastApplied) {
             int toApplyIndex = lastApplied + 1;
@@ -174,7 +189,6 @@ public class State {
         }
         System.out.println("Current state of machine: " + stateMachine.getCounter());
     }
-
     public StateMachine getStateMachine() {
         return stateMachine;
     }
@@ -195,40 +209,23 @@ public class State {
         return LogElement.jsonToLogElement(FileManager.readLine(logFile, lineToReadFromFile));*/
         return log.get(index);
     }
-
+    //TODO: nao respeita os casos do ficheiro.
     public LinkedList<LogElement.LogElementArgs> getEntries(int replicaId) {
         //index is the next index to send to the follower.
         int index = nextIndex.get(replicaId);
         System.out.println("ReplicaId: " + replicaId + ", index: " + index);
         LinkedList<LogElement.LogElementArgs> entries = new LinkedList<>();
-        /*for (int i = index; i <= lastLogIndex; i++) {
-            System.out.println(ByteBuffer.wrap(log.get(i).getCommandArgs()).getInt());
-            entries.add(log.get(i));
-        }
-        return entries;*/
 
         //int linesToReadFromFile = (lastLogIndex - index) - log.size();
         //if (linesToReadFromFile == 0) return log;
         //if (linesToReadFromFile < 0) {
         if (log.size() > 0) {
-            /*
-            for (LogElement.LogElementArgs logElementArgs : log) {
-                System.out.println(ByteBuffer.wrap(logElementArgs.getCommandArgs()).getInt());
-            }*/
             System.out.println("Index replica: " + index);
             System.out.println("lastLogIndex replica: " + lastLogIndex);
             for (int i = index; i <= lastLogIndex; i++) {
                 System.out.println("Value:");
                 System.out.println(ByteBuffer.wrap(log.get(i).getCommandArgs()).getInt());
                 entries.add(log.get(i));
-            }
-
-            for (int i = log.size() - (lastLogIndex - index); i < log.size(); i++) {
-                System.out.println(ByteBuffer.wrap(log.get(i).getCommandArgs()).getInt());
-                //entries.add(log.get(i));
-            }
-            for (LogElement.LogElementArgs entry: entries) {
-                System.out.println("Entry: " + ByteBuffer.wrap(entry.getCommandArgs()).getInt());
             }
             return entries;
         }/*

@@ -40,14 +40,18 @@ public class AppendEntriesEvent implements EventHandler {
     //Se o index que o client necessita for inferior ao ultimo que eu enviei, faço invoke logo com todos os indexs que
     //lhe faltam, assim os logs vão estar consistentes.
 
+    //Se eu recebo uma entry, com um term superior ao meu lastLogTerm, tenho que apagar todos os uncommitted e dizer
+    //ao novo lider qual é o index que eu quero, que é o a seguir ao lastApplied.
 
     @Override
     public Result processRequest(int senderId, String label, ByteString data, Timestamp timestamp) {
+        System.out.println("PROCESS REQUEST RECEIVED.");
         Result result = null;
         monitor.lock();
         try {
             AppendEntriesRPC.AppendEntriesArgs received = AppendEntriesRPC.appendEntriesArgsFromJson(data.toStringUtf8());
-
+            System.out.println("Received term: " + received.term);
+            System.out.println("State current term: " + state.getCurrentTerm());
             if (received.term >= state.getCurrentTerm()) {
                 state.setCurrentTerm(received.term);
                 //If it is a heartbeat.
@@ -55,6 +59,9 @@ public class AppendEntriesEvent implements EventHandler {
                     if (received.leaderId != state.getCurrentLeader()) {
                         state.setCurrentLeader(received.leaderId);
                     }
+                    state.setCommitIndex(received.leaderCommit);
+                    state.updateStateMachine();
+
                     System.out.println("* Heartbeat received from " + received.leaderId + " *");
                     condition.signal();
                 } else {
@@ -62,19 +69,20 @@ public class AppendEntriesEvent implements EventHandler {
                     //System.out.println("PrevLogIndex: " + received.prevLogIndex);
                     //System.out.println("LastLogIndex: " + state.getLastLogIndex());
 
-                    if (received.prevLogIndex == state.getLastLogIndex()) {
+                    //System.out.println("PrevLogTerm: " + received.prevLogTerm);
+                    //System.out.println("LastLogTerm: " + state.getLastLogTerm());
 
-                        System.out.println("PrevLogTerm: " + received.prevLogTerm);
-                        System.out.println("LastLogTerm: " + state.getLastLogTerm());
-
-                        if((received.prevLogTerm >= state.getLastLogTerm())) {
-                            System.out.println("Number of entries received: " + received.entries.size());
-                            received.entries.forEach(state::addToLog);
-                            //System.out.println("Leader commit index received: " + received.leaderCommit);
-                            state.setCommitIndex(received.leaderCommit);
-                            state.updateStateMachine();
-                        }
+                    if (received.prevLogIndex == state.getLastLogIndex() && (received.prevLogTerm == state.getLastLogTerm())) {
+                        System.out.println("Number of entries received: " + received.entries.size());
+                        System.out.println("Last log index: " + state.getLastLogIndex());
+                        received.entries.forEach(state::addToLog);
+                        //System.out.println("Leader commit index received: " + received.leaderCommit);
+                        state.setCommitIndex(received.leaderCommit);
+                        state.updateStateMachine();
+                    } else {
+                        state.deleteUncommittedLogs();
                     }
+
                     int nextIndex = state.getLastLogIndex() + 1;
                     System.out.println("My next index is: " + nextIndex);
 
